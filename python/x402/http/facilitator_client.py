@@ -6,7 +6,6 @@ implementations for communicating with remote facilitator services.
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -31,6 +30,7 @@ from .facilitator_client_base import (
     FacilitatorResponseError,
     HTTPFacilitatorClientBase,
 )
+from .utils import safe_base64_decode
 
 if TYPE_CHECKING:
     import httpx
@@ -94,38 +94,50 @@ _logger = logging.getLogger("x402")
 _EXTENSION_RESPONSE_LOG_FIELD_ALLOWLIST = ["status", "rejectedReason", "reason", "code"]
 
 
-def _log_extension_responses_header(response: Any) -> None:
-    """Read the EXTENSION-RESPONSES header and log allowlisted fields.
-
-    Silently ignores malformed headers.
-
-    Args:
-        response: The HTTP response object (httpx.Response).
-    """
+def _extract_extension_responses_header(response: Any) -> dict[str, Any] | None:
+    """Decode EXTENSION-RESPONSES when present and valid."""
     header = response.headers.get("EXTENSION-RESPONSES") or response.headers.get(
         "extension-responses"
     )
     if not header:
-        return
+        return None
     try:
-        decoded = base64.b64decode(header).decode("utf-8")
-        header_extensions: dict[str, Any] = json.loads(decoded)
-        if not isinstance(header_extensions, dict):
-            return
-        sanitized: dict[str, dict[str, Any]] = {}
-        for extension_key, payload in header_extensions.items():
-            filtered: dict[str, Any] = {}
-            if isinstance(payload, dict):
-                for field in _EXTENSION_RESPONSE_LOG_FIELD_ALLOWLIST:
-                    if field in payload:
-                        filtered[field] = payload[field]
-            sanitized[extension_key] = filtered
-        _logger.info(
-            "[x402] extension responses: %s",
-            json.dumps(sanitized),
-        )
+        decoded = json.loads(safe_base64_decode(header))
+        if not isinstance(decoded, dict):
+            return None
+        return decoded
     except Exception:
-        pass
+        return None
+
+
+def _log_extension_responses_header(decoded: dict[str, Any] | None) -> None:
+    """Log allowlisted fields from decoded EXTENSION-RESPONSES."""
+    if decoded is None:
+        return
+    sanitized: dict[str, dict[str, Any]] = {}
+    for extension_key, payload in decoded.items():
+        filtered: dict[str, Any] = {}
+        if isinstance(payload, dict):
+            for field in _EXTENSION_RESPONSE_LOG_FIELD_ALLOWLIST:
+                if field in payload:
+                    filtered[field] = payload[field]
+        sanitized[extension_key] = filtered
+    _logger.info(
+        "[x402] extension responses: %s",
+        json.dumps(sanitized),
+    )
+
+
+def _attach_extension_responses_from_header(
+    result: VerifyResponse | SettleResponse,
+    response: Any,
+) -> VerifyResponse | SettleResponse:
+    """Attach EXTENSION-RESPONSES from header when body omitted extensions."""
+    header_extensions = _extract_extension_responses_header(response)
+    _log_extension_responses_header(header_extensions)
+    if header_extensions is not None and result.extensions is None:
+        result.extensions = header_extensions
+    return result
 
 
 # ============================================================================
@@ -330,8 +342,7 @@ class HTTPFacilitatorClient(HTTPFacilitatorClientBase):
             raise ValueError(f"Facilitator verify failed ({response.status_code}): {response.text}")
 
         result = _parse_facilitator_response(response, VerifyResponse, "verify")
-        _log_extension_responses_header(response)
-        return result
+        return _attach_extension_responses_from_header(result, response)
 
     async def _settle_http(
         self,
@@ -353,8 +364,7 @@ class HTTPFacilitatorClient(HTTPFacilitatorClientBase):
             raise ValueError(f"Facilitator settle failed ({response.status_code}): {response.text}")
 
         result = _parse_facilitator_response(response, SettleResponse, "settle")
-        _log_extension_responses_header(response)
-        return result
+        return _attach_extension_responses_from_header(result, response)
 
 
 # ============================================================================
@@ -550,8 +560,7 @@ class HTTPFacilitatorClientSync(HTTPFacilitatorClientBase):
             raise ValueError(f"Facilitator verify failed ({response.status_code}): {response.text}")
 
         result = _parse_facilitator_response(response, VerifyResponse, "verify")
-        _log_extension_responses_header(response)
-        return result
+        return _attach_extension_responses_from_header(result, response)
 
     def _settle_http(
         self,
@@ -573,5 +582,4 @@ class HTTPFacilitatorClientSync(HTTPFacilitatorClientBase):
             raise ValueError(f"Facilitator settle failed ({response.status_code}): {response.text}")
 
         result = _parse_facilitator_response(response, SettleResponse, "settle")
-        _log_extension_responses_header(response)
-        return result
+        return _attach_extension_responses_from_header(result, response)
