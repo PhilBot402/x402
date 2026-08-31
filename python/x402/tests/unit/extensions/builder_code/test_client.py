@@ -2,27 +2,18 @@
 
 import pytest
 
-from tests.mocks import (
-    CashFacilitatorClient,
-    CashSchemeNetworkClient,
-    CashSchemeNetworkFacilitator,
-    CashSchemeNetworkServer,
-    build_cash_payment_requirements,
-)
-from x402 import x402Client, x402Facilitator, x402ResourceServer
+from x402 import x402Client, x402ResourceServer
 from x402.extensions.builder_code import (
     BUILDER_CODE,
     MAX_CLIENT_SERVICE_CODES,
     BuilderCodeClientExtension,
-    BuilderCodeFacilitatorExtension,
     declare_builder_code_extension,
 )
-from x402.schemas import PaymentPayload, PaymentRequired, PaymentRequirements, ResourceInfo
+from x402.schemas import PaymentPayload, PaymentRequired, PaymentRequirements
 from x402.server_base import ERR_EXTENSION_ECHO_MISMATCH
 
 APP = "bc_my_app"
 SERVICE = "bc_my_client"
-WALLET = "bc_my_facilitator"
 
 
 def _base_payload(extensions: dict | None = None) -> PaymentPayload:
@@ -153,26 +144,24 @@ class TestBuilderCodeClientIntegration:
     async def test_rejects_forged_builder_code_app_code_when_server_did_not_declare_builder_code(
         self,
     ) -> None:
-        client = (
-            x402Client()
-            .register("x402:cash", CashSchemeNetworkClient("payer"))
-            .register_extension(BuilderCodeClientExtension(SERVICE))
-            .set_spend_controls(False)
-        )
-        facilitator = x402Facilitator().register(["x402:cash"], CashSchemeNetworkFacilitator())
-        facilitator.register_extension(BuilderCodeFacilitatorExtension(builder_code=WALLET))
-        server = x402ResourceServer(CashFacilitatorClient(facilitator))
-        server.register("x402:cash", CashSchemeNetworkServer())
-        server.initialize()
+        client = x402Client()
+        client.register("eip155:8453", _MockSchemeClient())
+        client.register_extension(BuilderCodeClientExtension(SERVICE))
+        server = x402ResourceServer()
 
-        accepts = [build_cash_payment_requirements("merchant@example.com", "USD", "1")]
-        resource = ResourceInfo(
-            url="https://example.com/api/weather",
-            description="Weather API",
-            mime_type="application/json",
+        payment_required = PaymentRequired(
+            x402_version=2,
+            accepts=[
+                PaymentRequirements(
+                    scheme="exact",
+                    network="eip155:8453",
+                    asset="0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    amount="1000",
+                    pay_to="0x0000000000000000000000000000000000000001",
+                    max_timeout_seconds=300,
+                )
+            ],
         )
-        payment_required = await server.create_payment_required_response(accepts, resource)
-
         payment_payload = await client.create_payment_payload(payment_required)
         payment_payload.extensions = {
             **(payment_payload.extensions or {}),
