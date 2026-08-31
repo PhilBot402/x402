@@ -2,17 +2,27 @@
 
 import pytest
 
-from x402 import x402Client
+from tests.mocks import (
+    CashFacilitatorClient,
+    CashSchemeNetworkClient,
+    CashSchemeNetworkFacilitator,
+    CashSchemeNetworkServer,
+    build_cash_payment_requirements,
+)
+from x402 import x402Client, x402Facilitator, x402ResourceServer
 from x402.extensions.builder_code import (
     BUILDER_CODE,
     MAX_CLIENT_SERVICE_CODES,
     BuilderCodeClientExtension,
+    BuilderCodeFacilitatorExtension,
     declare_builder_code_extension,
 )
-from x402.schemas import PaymentPayload, PaymentRequired, PaymentRequirements
+from x402.schemas import PaymentPayload, PaymentRequired, PaymentRequirements, ResourceInfo
+from x402.server_base import ERR_EXTENSION_ECHO_MISMATCH
 
 APP = "bc_my_app"
 SERVICE = "bc_my_client"
+WALLET = "bc_my_facilitator"
 
 
 def _base_payload(extensions: dict | None = None) -> PaymentPayload:
@@ -138,3 +148,40 @@ class TestBuilderCodeClientIntegration:
             "info": {"a": APP, "s": [SERVICE, "bc_server_sdk"]},
             "schema": payment_required.extensions[BUILDER_CODE]["schema"],
         }
+
+    @pytest.mark.asyncio
+    async def test_rejects_forged_builder_code_app_code_when_server_did_not_declare_builder_code(
+        self,
+    ) -> None:
+        client = (
+            x402Client()
+            .register("x402:cash", CashSchemeNetworkClient("payer"))
+            .register_extension(BuilderCodeClientExtension(SERVICE))
+            .set_spend_controls(False)
+        )
+        facilitator = x402Facilitator().register(["x402:cash"], CashSchemeNetworkFacilitator())
+        facilitator.register_extension(BuilderCodeFacilitatorExtension(builder_code=WALLET))
+        server = x402ResourceServer(CashFacilitatorClient(facilitator))
+        server.register("x402:cash", CashSchemeNetworkServer())
+        server.initialize()
+
+        accepts = [build_cash_payment_requirements("merchant@example.com", "USD", "1")]
+        resource = ResourceInfo(
+            url="https://example.com/api/weather",
+            description="Weather API",
+            mime_type="application/json",
+        )
+        payment_required = await server.create_payment_required_response(accepts, resource)
+
+        payment_payload = await client.create_payment_payload(payment_required)
+        payment_payload.extensions = {
+            **(payment_payload.extensions or {}),
+            BUILDER_CODE: {
+                "info": {"a": "forged_app", "s": [SERVICE]},
+            },
+        }
+
+        result = server.validate_extensions(payment_required, payment_payload)
+        assert result.valid is False
+        assert result.invalid_reason == ERR_EXTENSION_ECHO_MISMATCH
+        assert result.extension_key == BUILDER_CODE
