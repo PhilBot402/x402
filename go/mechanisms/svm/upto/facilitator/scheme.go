@@ -111,6 +111,7 @@ const (
 
 // DelegatedSettleContext is passed to Config.ResolveCallerIdentity.
 type DelegatedSettleContext struct {
+	Ctx                context.Context
 	Step               DelegatedSettleStep
 	ChannelID          string
 	Network            x402.Network
@@ -451,6 +452,7 @@ func (f *UptoSvmScheme) settleDeposit(
 	var depositIdentity string
 	if parseErr == nil && delegated {
 		depositIdentity = f.resolveDelegatedCallerIdentity(DelegatedSettleContext{
+			Ctx:                ctx,
 			Step:               DelegatedSettleStepDeposit,
 			ChannelID:          uptoPayload.ChannelId,
 			Network:            x402.Network(requirements.Network),
@@ -1121,6 +1123,7 @@ func (f *UptoSvmScheme) authenticateDelegatedClaim(
 	}
 
 	identity := f.resolveDelegatedCallerIdentity(DelegatedSettleContext{
+		Ctx:                ctx,
 		Step:               DelegatedSettleStepClaim,
 		ChannelID:          uptoPayload.ChannelId,
 		Network:            x402.Network(requirements.Network),

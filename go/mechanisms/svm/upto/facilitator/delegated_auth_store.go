@@ -2,6 +2,8 @@ package facilitator
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -23,8 +25,22 @@ type DelegatedAuthBinding struct {
 	ExpiresAt int64
 }
 
+// ErrDelegatedAuthIdentityConflict is returned by Bind when a different
+// CallerIdentity already owns the (channelID, network) key.
+var ErrDelegatedAuthIdentityConflict = errors.New("delegated auth binding already exists for a different identity")
+
 // DelegatedAuthStore is a pluggable store of delegated deposit/claim
 // caller-identity bindings.
+//
+// Bind is keyed by (channelID, network) and is first-writer-wins:
+//
+//   - no existing row (or expired) → insert
+//   - existing row, same CallerIdentity → success (idempotent retry after
+//     bind-then-broadcast-fail)
+//   - existing row, different CallerIdentity → ErrDelegatedAuthIdentityConflict
+//
+// Get should return (nil, nil) for not-found / expired and propagate store
+// errors so a host can map infra failures separately from unauthenticated.
 type DelegatedAuthStore interface {
 	Bind(ctx context.Context, binding DelegatedAuthBinding) error
 	Get(ctx context.Context, channelID string, network x402.Network) (*DelegatedAuthBinding, error)
@@ -47,11 +63,25 @@ func delegatedAuthBindingKey(channelID string, network x402.Network) string {
 	return string(network) + ":" + channelID
 }
 
-// Bind records the caller identity for a channel.
+func delegatedAuthExpired(expiresAt int64) bool {
+	return expiresAt <= time.Now().Unix()
+}
+
+// Bind records the caller identity for a channel. First writer wins: a later
+// Bind with the same identity is a no-op; a different identity is an error.
 func (s *InMemoryDelegatedAuthStore) Bind(_ context.Context, binding DelegatedAuthBinding) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.bindings[delegatedAuthBindingKey(binding.ChannelID, binding.Network)] = binding
+
+	key := delegatedAuthBindingKey(binding.ChannelID, binding.Network)
+	existing, ok := s.bindings[key]
+	if ok && !delegatedAuthExpired(existing.ExpiresAt) {
+		if existing.CallerIdentity == binding.CallerIdentity {
+			return nil
+		}
+		return fmt.Errorf("%w", ErrDelegatedAuthIdentityConflict)
+	}
+	s.bindings[key] = binding
 	return nil
 }
 
@@ -65,7 +95,7 @@ func (s *InMemoryDelegatedAuthStore) Get(_ context.Context, channelID string, ne
 	if !ok {
 		return nil, nil
 	}
-	if binding.ExpiresAt <= time.Now().Unix() {
+	if delegatedAuthExpired(binding.ExpiresAt) {
 		delete(s.bindings, key)
 		return nil, nil
 	}

@@ -1411,6 +1411,46 @@ func TestNewUptoSvmSchemeRequiresResolveCallerIdentityWithAuthorizer(t *testing.
 	})
 }
 
+func TestInMemoryDelegatedAuthStore_Bind_FirstWriterWins(t *testing.T) {
+	store := NewInMemoryDelegatedAuthStore()
+	ctx := t.Context()
+	expiresAt := time.Now().Add(time.Hour).Unix()
+
+	require.NoError(t, store.Bind(ctx, DelegatedAuthBinding{
+		ChannelID: "ch-1", Network: testNetwork, CallerIdentity: "svc-1", ExpiresAt: expiresAt,
+	}))
+	require.NoError(t, store.Bind(ctx, DelegatedAuthBinding{
+		ChannelID: "ch-1", Network: testNetwork, CallerIdentity: "svc-1", ExpiresAt: expiresAt,
+	}))
+
+	err := store.Bind(ctx, DelegatedAuthBinding{
+		ChannelID: "ch-1", Network: testNetwork, CallerIdentity: "svc-2", ExpiresAt: expiresAt,
+	})
+	require.ErrorIs(t, err, ErrDelegatedAuthIdentityConflict)
+
+	got, err := store.Get(ctx, "ch-1", testNetwork)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "svc-1", got.CallerIdentity)
+}
+
+func TestInMemoryDelegatedAuthStore_Bind_ExpiredIsAbsent(t *testing.T) {
+	store := NewInMemoryDelegatedAuthStore()
+	ctx := t.Context()
+
+	require.NoError(t, store.Bind(ctx, DelegatedAuthBinding{
+		ChannelID: "ch-1", Network: testNetwork, CallerIdentity: "svc-1", ExpiresAt: time.Now().Add(-time.Second).Unix(),
+	}))
+	require.NoError(t, store.Bind(ctx, DelegatedAuthBinding{
+		ChannelID: "ch-1", Network: testNetwork, CallerIdentity: "svc-2", ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}))
+
+	got, err := store.Get(ctx, "ch-1", testNetwork)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "svc-2", got.CallerIdentity)
+}
+
 func TestDelegatedSettleRoutesFullChargeTypeClaimAsClaim(t *testing.T) {
 	d := newDelegatedFixture(t, identityResolver("svc-1"))
 	d.openOnSend(t)
