@@ -2,7 +2,7 @@
 
 import pytest
 
-from x402 import x402ResourceServer, x402ResourceServerSync
+from x402 import FacilitatorCapabilityError, x402ResourceServer, x402ResourceServerSync
 from x402.schemas import (
     PaymentPayload,
     PaymentRequirements,
@@ -302,7 +302,7 @@ class TestValidateFacilitatorCapabilities:
         server = x402ResourceServer(self._client())
         server.register("eip155:8453", _ValidatingSchemeServer("mock", problem="needs authorizer"))
 
-        with pytest.raises(ValueError, match="needs authorizer"):
+        with pytest.raises(FacilitatorCapabilityError, match="needs authorizer"):
             server.initialize()
 
     def test_initialize_succeeds_when_hook_returns_none(self):
