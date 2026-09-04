@@ -541,6 +541,33 @@ class TestFlaskBackgroundInit:
                 PaymentMiddleware(app, routes, mock_server, sync_facilitator_on_start=True)
         assert exit_codes == []
 
+    def test_eager_init_does_not_exit_on_empty_supported(self):
+        app = Flask(__name__)
+        mock_server = MagicMock()
+        routes = {
+            "GET /api/protected": RouteConfig(
+                accepts=PaymentOption(
+                    scheme="exact",
+                    pay_to="0x1234567890123456789012345678901234567890",
+                    price="$0.01",
+                    network="eip155:8453",
+                ),
+            )
+        }
+        exit_codes: list[int] = []
+        with patch("x402.http.middleware.flask.x402HTTPResourceServerSync") as mock_http_server:
+            instance = MagicMock()
+            instance.initialize.side_effect = RuntimeError(
+                "Failed to initialize: no supported payment kinds loaded from any facilitator."
+            )
+            mock_http_server.return_value = instance
+            with patch(
+                "x402.http.background_init._process_exit",
+                lambda code: exit_codes.append(code),
+            ):
+                PaymentMiddleware(app, routes, mock_server, sync_facilitator_on_start=True)
+        assert exit_codes == []
+
 
 class TestPaymentMiddlewareFunction:
     """Tests for payment_middleware convenience function."""

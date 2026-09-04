@@ -276,6 +276,19 @@ class TestServerInitialization:
         # First client should be registered
         assert server._facilitator_clients_map["eip155:8453"]["exact"] is client1
 
+    def test_initialize_raises_when_no_kinds_loaded(self):
+        """Empty /supported must fail retryably, matching TypeScript."""
+        server = x402ResourceServer(MockFacilitatorClient([]))
+
+        with pytest.raises(
+            RuntimeError,
+            match="no supported payment kinds loaded from any facilitator",
+        ):
+            server.initialize()
+
+        assert server._initialized is False
+        assert server._supported_responses == {}
+
 
 class _ValidatingSchemeServer(MockSchemeServer):
     """Mock scheme exposing the optional validate_facilitator_support hook."""

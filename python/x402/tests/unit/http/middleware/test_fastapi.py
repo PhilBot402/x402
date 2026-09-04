@@ -1129,6 +1129,32 @@ class TestFastAPIBackgroundInit:
                 payment_middleware(routes, mock_server, sync_facilitator_on_start=True)
         assert exit_codes == []
 
+    def test_eager_init_does_not_exit_on_empty_supported(self):
+        mock_server = MagicMock()
+        routes = {
+            "GET /api/protected": RouteConfig(
+                accepts=PaymentOption(
+                    scheme="exact",
+                    pay_to="0x1234567890123456789012345678901234567890",
+                    price="$0.01",
+                    network="eip155:8453",
+                ),
+            )
+        }
+        exit_codes: list[int] = []
+        with patch("x402.http.middleware.fastapi.x402HTTPResourceServer") as mock_http_server:
+            instance = MagicMock()
+            instance.initialize.side_effect = RuntimeError(
+                "Failed to initialize: no supported payment kinds loaded from any facilitator."
+            )
+            mock_http_server.return_value = instance
+            with patch(
+                "x402.http.background_init._process_exit",
+                lambda code: exit_codes.append(code),
+            ):
+                payment_middleware(routes, mock_server, sync_facilitator_on_start=True)
+        assert exit_codes == []
+
 
 # =============================================================================
 # ASGI Middleware Class Tests

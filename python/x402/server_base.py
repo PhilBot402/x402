@@ -617,6 +617,14 @@ class x402ResourceServerBase:
                 if scheme not in self._supported_responses[network]:
                     self._supported_responses[network][scheme] = supported
 
+        # Empty /supported is transient (timeout, deploy blip) and must stay
+        # retryable. Route validation would otherwise raise RouteConfigurationError
+        # (missing_facilitator) and HTTP adapters would treat that as fatal.
+        if not self._supported_responses:
+            raise RuntimeError(
+                "Failed to initialize: no supported payment kinds loaded from any facilitator."
+            )
+
         self._validate_facilitator_capabilities()
         self._initialized = True
 
