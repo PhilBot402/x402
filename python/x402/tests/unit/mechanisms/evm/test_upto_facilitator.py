@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from x402.mechanisms.evm import get_default_asset
+from x402.mechanisms.evm.asset_cache import reset_asset_contract_cache
 from x402.mechanisms.evm.constants import (
     ERR_ASSET_NOT_DEPLOYED_CONTRACT,
     ERR_ERC20_APPROVAL_BROADCAST_FAILED,
@@ -400,6 +401,9 @@ class TestVerify:
 
     def test_rejects_eoa_asset(self):
         # When the token address has no bytecode, verify must reject with asset_not_deployed_contract.
+        # Other tests share TOKEN_ADDRESS but model it as deployed, and positive asset checks are
+        # cached process-wide, so drop those entries to force a real get_code here.
+        reset_asset_contract_cache()
         facilitator = self._make_facilitator(
             code_by_address={TOKEN_ADDRESS.lower(): b""},  # token = EOA
         )
@@ -410,6 +414,8 @@ class TestVerify:
     def test_getcode_rpc_error_raises(self):
         # An RPC error on get_code must propagate as an exception, not a 400 response.
         import pytest
+
+        reset_asset_contract_cache()
 
         class _RPCErrorSigner(MockFacilitatorSigner):
             def get_code(self, address: str) -> bytes:

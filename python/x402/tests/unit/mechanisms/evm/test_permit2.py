@@ -6,6 +6,7 @@ import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from x402.mechanisms.evm.asset_cache import reset_asset_contract_cache
 from x402.mechanisms.evm.constants import (
     ERR_ASSET_NOT_DEPLOYED_CONTRACT,
     ERR_ERC20_APPROVAL_BROADCAST_FAILED,
@@ -392,6 +393,10 @@ class TestVerifyPermit2:
     def test_verify_rejects_eoa_asset(self):
         # Asset address with no bytecode must be rejected before signature checks.
         # The mock returns non-empty code for TOKEN_ADDRESS by default; override to EOA.
+        # Other tests share TOKEN_ADDRESS but model it as deployed, and positive asset checks are
+        # cached process-wide, so drop those entries to force a real get_code here.
+        reset_asset_contract_cache()
+
         class _EOAAssetSigner(MockFacilitatorSigner):
             def get_code(self, address: str) -> bytes:
                 return b""  # all addresses, including token, are EOAs
