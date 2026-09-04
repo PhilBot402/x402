@@ -27,6 +27,7 @@ import {
 import * as Errors from "./errors";
 import { FacilitatorEvmSigner } from "../../signer";
 import { ExactPermit2Payload } from "../../types";
+import { startAssetContractCheck } from "../../assetCache";
 import { finalHashFromTwoRequestSend, getEvmChainId, isValidTxHash } from "../../utils";
 import { validateErc20ApprovalForPayment } from "./erc20approval";
 import { verifyTypedDataSignature } from "../../shared/verifySignature";
@@ -112,9 +113,13 @@ export async function verifyPermit2(
   const chainId = getEvmChainId(requirements.network);
   const tokenAddress = getAddress(requirements.asset);
 
-  const assetBytecode = await signer.getCode({ address: tokenAddress });
-  if (!assetBytecode || assetBytecode === "0x") {
-    return { isValid: false, invalidReason: Errors.ErrAssetNotDeployedContract, payer };
+  const assetReason = await startAssetContractCheck(
+    signer,
+    requirements.network,
+    requirements.asset,
+  ).await();
+  if (assetReason) {
+    return { isValid: false, invalidReason: assetReason, payer };
   }
 
   if (
