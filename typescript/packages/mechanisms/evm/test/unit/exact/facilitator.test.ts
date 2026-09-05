@@ -2502,6 +2502,51 @@ describe("ExactEvmScheme (Facilitator)", () => {
       expect(getCodeCount(payer)).toBe(payerCallsAfterFirst * 3);
     });
 
+    it("does not cache a positive asset check when Permit2 fails a cheap pre-check", async () => {
+      const requirements: PaymentRequirements = {
+        scheme: "exact",
+        network: "eip155:84532",
+        amount: "1000000",
+        asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        payTo: "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0",
+        maxTimeoutSeconds: 300,
+        extra: { name: "USDC", version: "2", assetTransferMethod: "permit2" },
+      };
+      const permit2Payload: PaymentPayload = {
+        x402Version: 2,
+        payload: {
+          signature: "0xmocksignature",
+          permit2Authorization: {
+            from: mockClientSigner.address,
+            permitted: {
+              token: requirements.asset,
+              amount: requirements.amount,
+            },
+            spender: "0x0000000000000000000000000000000000000001",
+            nonce: "12345",
+            deadline: "999999999999",
+            witness: {
+              to: requirements.payTo,
+              validAfter: "0",
+            },
+          },
+        },
+        accepted: requirements,
+        resource: { url: "", description: "", mimeType: "" },
+      };
+
+      const rejected = await facilitator.verify(permit2Payload, requirements);
+      expect(rejected.invalidReason).toBe("invalid_permit2_spender");
+
+      await vi.waitFor(() => expect(getCodeCount(requirements.asset)).toBeGreaterThanOrEqual(1));
+      const assetCallsAfterReject = getCodeCount(requirements.asset);
+
+      const { payload, requirements: eip3009Req } = await deployedPayment();
+      const accepted = await facilitator.verify(payload, eip3009Req);
+      expect(accepted.isValid).toBe(true);
+      expect(getCodeCount(eip3009Req.asset)).toBe(assetCallsAfterReject + 1);
+    });
+
     it("scopes the cache per network so a hit on one chain does not answer for another", async () => {
       const { payload, requirements } = await deployedPayment();
       const first = await facilitator.verify(payload, requirements);

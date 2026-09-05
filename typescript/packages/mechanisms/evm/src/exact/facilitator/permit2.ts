@@ -113,14 +113,8 @@ export async function verifyPermit2(
   const chainId = getEvmChainId(requirements.network);
   const tokenAddress = getAddress(requirements.asset);
 
-  const assetReason = await startAssetContractCheck(
-    signer,
-    requirements.network,
-    requirements.asset,
-  ).await();
-  if (assetReason) {
-    return { isValid: false, invalidReason: assetReason, payer };
-  }
+  // Run the asset-contract check concurrently with the signature check below.
+  const assetCheck = startAssetContractCheck(signer, requirements.network, requirements.asset);
 
   if (
     getAddress(permit2Payload.permit2Authorization.spender) !==
@@ -213,6 +207,12 @@ export async function verifyPermit2(
     ...permit2TypedData,
     signature: permit2Payload.signature,
   });
+
+  const assetReason = await assetCheck.await();
+  if (assetReason) {
+    return { isValid: false, invalidReason: assetReason, payer };
+  }
+
   if (!signatureValid) {
     return {
       isValid: false,

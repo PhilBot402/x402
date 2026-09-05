@@ -142,6 +142,9 @@ export async function verifyEIP3009(
 
   const signature = eip3009Payload.signature!;
 
+  // Run the asset-contract check concurrently with signature classification.
+  const assetCheck = startAssetContractCheck(signer, requirements.network, requirements.asset);
+
   // Classify the payer: fetch code once, parse ERC-6492 wrapper, determine counterfactual.
   // Using classifyErc6492Payer avoids duplicating this block across eip3009.ts / v1/scheme.ts.
   const classification = await classifyErc6492Payer(signer, signature, payer);
@@ -251,11 +254,7 @@ export async function verifyEIP3009(
   // Reject payments whose asset is an EOA — eth_call on an EOA silently returns
   // empty data without reverting, so simulation would pass but no Transfer event
   // would be emitted, producing a silent no-op settlement.
-  const assetReason = await startAssetContractCheck(
-    signer,
-    requirements.network,
-    requirements.asset,
-  ).await();
+  const assetReason = await assetCheck.await();
   if (assetReason) {
     return {
       response: { isValid: false, invalidReason: assetReason, payer },
