@@ -12,6 +12,7 @@ from x402.mechanisms.evm.asset_cache import (
     reset_asset_contract_cache,
     start_asset_contract_check,
 )
+from x402.mechanisms.evm.constants import ERR_ASSET_NOT_DEPLOYED_CONTRACT
 
 CACHE_TEST_ASSET = "0x00000000000000000000000000000000000000bb"
 
@@ -44,12 +45,11 @@ def test_asset_contract_check_without_await_does_not_cache() -> None:
     reset_asset_contract_cache()
 
     signer = _CountingCodeSigner()
-    abandoned = start_asset_contract_check(signer, "eip155:84532", CACHE_TEST_ASSET)
-    abandoned.results.get()
+    start_asset_contract_check(signer, "eip155:84532", CACHE_TEST_ASSET)
 
     reason = start_asset_contract_check(signer, "eip155:84532", CACHE_TEST_ASSET).await_result()
     assert reason == ""
-    assert signer.calls == 2, "the abandoned check must not have populated the cache"
+    assert signer.calls == 1, "the abandoned check must not have populated the cache"
 
 
 def test_asset_contract_cache_skips_empty_network() -> None:
@@ -80,6 +80,29 @@ def test_asset_contract_cache_entries_expire() -> None:
     assert not _global_asset_contract_cache.is_fresh(
         key, start + DEFAULT_ASSET_CONTRACT_CACHE_TTL + timedelta(seconds=1)
     )
+
+
+def test_asset_contract_cache_does_not_cache_negative_result() -> None:
+    reset_asset_contract_cache()
+
+    class _FlipCodeSigner:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.code = b""
+
+        def get_code(self, address: str) -> bytes:
+            self.calls += 1
+            return self.code
+
+    signer = _FlipCodeSigner()
+    reason = start_asset_contract_check(signer, "eip155:84532", CACHE_TEST_ASSET).await_result()
+    assert reason == ERR_ASSET_NOT_DEPLOYED_CONTRACT
+    assert signer.calls == 1
+
+    signer.code = b"\x60\x60"
+    reason = start_asset_contract_check(signer, "eip155:84532", CACHE_TEST_ASSET).await_result()
+    assert reason == ""
+    assert signer.calls == 2, "a negative result must not be reused within the TTL"
 
 
 def test_asset_contract_cache_is_bounded() -> None:

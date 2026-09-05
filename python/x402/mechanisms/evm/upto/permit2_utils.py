@@ -120,11 +120,9 @@ def verify_upto_permit2(
         )
     token_address = normalize_address(requirements.asset)
 
-    asset_reason = start_asset_contract_check(
-        signer, str(requirements.network), requirements.asset
-    ).await_result()
-    if asset_reason:
-        return VerifyResponse(is_valid=False, invalid_reason=asset_reason, payer=payer)
+    # Start after network/asset are known; await after signature work so a failed
+    # pre-check does not RPC or populate the positive cache.
+    asset_check = start_asset_contract_check(signer, str(requirements.network), requirements.asset)
 
     # 3. Spender check
     try:
@@ -242,6 +240,10 @@ def verify_upto_permit2(
         return VerifyResponse(
             is_valid=False, invalid_reason=ERR_PERMIT2_INVALID_SIGNATURE, payer=payer
         )
+
+    asset_reason = asset_check.await_result()
+    if asset_reason:
+        return VerifyResponse(is_valid=False, invalid_reason=asset_reason, payer=payer)
 
     # If simulation is disabled, skip allowance/balance/simulation checks (matches Go/TS).
     if not simulate:

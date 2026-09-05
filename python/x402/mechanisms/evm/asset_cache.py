@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from queue import Queue
 from threading import Lock
 
 from .constants import ERR_ASSET_NOT_DEPLOYED_CONTRACT
@@ -82,36 +81,28 @@ def reset_asset_contract_cache() -> None:
         _global_asset_contract_cache._expiries = {}
 
 
-@dataclass
-class _AssetContractResult:
-    reason: str
-    error: BaseException | None = None
-
-
 class AssetContractCheck:
     """An asset-contract check whose result is delivered by await_result."""
 
-    def __init__(self, network: str, asset: str) -> None:
+    def __init__(self, signer: FacilitatorEvmSigner, network: str, asset: str) -> None:
+        self._signer = signer
         self._network = network
         self._asset = asset
-        self.results: Queue[_AssetContractResult] = Queue(maxsize=1)
 
     def await_result(self) -> str:
         """Return the check's result, caching a positive one for DEFAULT_ASSET_CONTRACT_CACHE_TTL.
 
-        Recording on await_result rather than when the check runs keeps cache contents
-        independent of scheduling: a check abandoned by an early return cannot publish
-        a result.
+        Recording on await_result rather than when the check is started keeps cache contents
+        independent of an early return: a check that is never awaited cannot publish a result
+        and does not issue eth_getCode.
         """
-        result = self.results.get()
-        if result.error is not None:
-            raise result.error
-        if result.reason == "":
+        reason = validate_asset_is_contract(self._signer, self._network, self._asset)
+        if reason == "":
             _global_asset_contract_cache.record(
                 _AssetContractCacheKey(network=self._network, asset=normalize_address(self._asset)),
                 datetime.now(timezone.utc),
             )
-        return result.reason
+        return reason
 
 
 def validate_asset_is_contract(
@@ -149,11 +140,5 @@ def start_asset_contract_check(
     network: str,
     asset: str,
 ) -> AssetContractCheck:
-    """Run validate_asset_is_contract. The result is delivered by await_result."""
-    check = AssetContractCheck(network=network, asset=asset)
-    try:
-        reason = validate_asset_is_contract(signer, network, asset)
-        check.results.put(_AssetContractResult(reason=reason))
-    except Exception as exc:
-        check.results.put(_AssetContractResult(reason="", error=exc))
-    return check
+    """Create an asset-contract check. The RPC and cache write happen in await_result."""
+    return AssetContractCheck(signer=signer, network=network, asset=asset)
