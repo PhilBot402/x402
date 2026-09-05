@@ -285,19 +285,6 @@ class MockFacilitatorSigner:
         return self.code
 
 
-class _CountingGetCodeSigner(MockFacilitatorSigner):
-    """Counts get_code calls per address so cache hits are observable."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.get_code_calls: dict[str, int] = {}
-
-    def get_code(self, address: str) -> bytes:
-        key = address.lower()
-        self.get_code_calls[key] = self.get_code_calls.get(key, 0) + 1
-        return super().get_code(address)
-
-
 class _ReceiptTimeoutSigner(MockFacilitatorSigner):
     """Signer whose broadcast never confirms in time (settlement_pending)."""
 
@@ -614,7 +601,7 @@ class TestVerify:
         # ERC-6492.
         reset_asset_contract_cache()
 
-        signer = _CountingGetCodeSigner(code_by_address={PAYER.lower(): b"\x01"})
+        signer = MockFacilitatorSigner(code_by_address={PAYER.lower(): b"\x01"})
         facilitator = ExactEvmFacilitatorScheme(signer)
 
         for attempt in range(1, 4):
@@ -633,7 +620,7 @@ class TestVerify:
         # network must not answer for another.
         reset_asset_contract_cache()
 
-        signer = _CountingGetCodeSigner(code_by_address={PAYER.lower(): b"\x01"})
+        signer = MockFacilitatorSigner(code_by_address={PAYER.lower(): b"\x01"})
         facilitator = ExactEvmFacilitatorScheme(signer)
 
         result = facilitator.verify(make_payment_payload(), make_requirements())
