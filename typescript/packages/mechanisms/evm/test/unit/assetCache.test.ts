@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { FacilitatorEvmSigner } from "../../src/signer";
+import { ErrAssetNotDeployedContract } from "../../src/exact/facilitator/errors";
 import {
   DEFAULT_ASSET_CONTRACT_CACHE_TTL_MS,
   MAX_ASSET_CONTRACT_CACHE_ENTRIES,
@@ -50,6 +51,36 @@ describe("asset contract cache", () => {
 
     const reason = await startAssetContractCheck(signer, "eip155:84532", cacheTestAsset).await();
     expect(reason).toBe("");
+    expect(calls.count).toBe(2);
+  });
+
+  it("does not cache a negative result so a later deploy is visible", async () => {
+    let code: `0x${string}` = "0x";
+    const calls = { count: 0 };
+    const signer: FacilitatorEvmSigner = {
+      getAddresses: () => [],
+      readContract: async () => 0n,
+      verifyTypedData: async () => false,
+      writeContract: async () => "0x",
+      sendTransaction: async () => "0x",
+      waitForTransactionReceipt: async () => ({ status: "success" }),
+      getCode: async () => {
+        calls.count += 1;
+        return code;
+      },
+    };
+
+    const first = await startAssetContractCheck(signer, "eip155:84532", cacheTestAsset).await();
+    expect(first).toBe(ErrAssetNotDeployedContract);
+    expect(calls.count).toBe(1);
+
+    code = "0x6060";
+    const second = await startAssetContractCheck(signer, "eip155:84532", cacheTestAsset).await();
+    expect(second).toBe("");
+    expect(calls.count).toBe(2);
+
+    const third = await startAssetContractCheck(signer, "eip155:84532", cacheTestAsset).await();
+    expect(third).toBe("");
     expect(calls.count).toBe(2);
   });
 

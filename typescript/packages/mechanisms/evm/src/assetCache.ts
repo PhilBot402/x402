@@ -30,6 +30,7 @@ const normalizeAsset = (asset: string): string => getAddress(asset).toLowerCase(
  */
 export const globalAssetContractCache: AssetContractCache = {
   ttl: DEFAULT_ASSET_CONTRACT_CACHE_TTL_MS,
+  // Node's event loop is single-threaded, so a plain Map is enough; Go needs RWMutex.
   expiries: new Map<string, number>(),
 
   isFresh(key: AssetContractCacheKey, now: number): boolean {
