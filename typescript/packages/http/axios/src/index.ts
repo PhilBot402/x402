@@ -1,10 +1,30 @@
+import { createRequire } from "node:module";
+import * as http from "node:http";
+import * as https from "node:https";
 import { x402Client, x402ClientConfig, x402HTTPClient } from "@x402/core/client";
-import { readLimitedBody } from "@x402/core/http";
+import {
+  MAX_CONTROL_PLANE_RESPONSE_BYTES,
+  readLimitedBody,
+  ResponseBodyTooLargeError,
+} from "@x402/core/http";
 import { type PaymentRequired } from "@x402/core/types";
 import { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 type X402RetryConfig = InternalAxiosRequestConfig & { __is402Retry?: boolean };
 type AxiosHeaderRecord = Record<string, string>;
+type AxiosNodeTransport = {
+  request: (
+    options: http.RequestOptions & { protocol?: string },
+    callback: (response: http.IncomingMessage) => void,
+  ) => http.ClientRequest;
+};
+
+const CONTROL_PLANE_LIMITED: unique symbol = Symbol("x402ControlPlaneLimited");
+const require = createRequire(import.meta.url);
+
+type DownloadLimitedConfig = InternalAxiosRequestConfig & {
+  [CONTROL_PLANE_LIMITED]?: boolean;
+};
 
 /**
  * Resolves the final absolute URL for an Axios 402 response.
@@ -68,6 +88,160 @@ function cloneAxiosHeaders(headers: InternalAxiosRequestConfig["headers"]): Axio
  */
 function setAxiosHeader(headers: AxiosHeaderRecord, key: string, value: string): void {
   headers[key] = value;
+}
+
+/**
+ * Loads axios's follow-redirects transport so wrapping `config.transport`
+ * does not disable redirects.
+ *
+ * @returns The follow-redirects http/https transports, if resolvable
+ */
+function loadFollowRedirects():
+  | { http: AxiosNodeTransport; https: AxiosNodeTransport }
+  | undefined {
+  try {
+    const axiosPackage = require.resolve("axios/package.json");
+    return createRequire(axiosPackage)("follow-redirects") as {
+      http: AxiosNodeTransport;
+      https: AxiosNodeTransport;
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Chooses the Node transport axios would have used for this request.
+ *
+ * @param config - Axios request configuration
+ * @returns The http, https, or follow-redirects transport
+ */
+function resolveNodeTransport(config: InternalAxiosRequestConfig): AxiosNodeTransport {
+  if (config.transport) {
+    return config.transport as AxiosNodeTransport;
+  }
+
+  const url = config.url ?? "";
+  const isHttpsRequest =
+    /^https:/i.test(url) || (!/^http:/i.test(url) && /^https:/i.test(config.baseURL ?? ""));
+  if (config.maxRedirects === 0) {
+    return isHttpsRequest ? https : http;
+  }
+
+  const follow = loadFollowRedirects();
+  if (!follow) {
+    return isHttpsRequest ? https : http;
+  }
+  return isHttpsRequest ? follow.https : follow.http;
+}
+
+/**
+ * Caps axios's in-adapter buffer when the status is already known to be 402.
+ *
+ * @param config - Axios request configuration to mutate
+ */
+function applyControlPlaneDownloadLimit(config: DownloadLimitedConfig): void {
+  const current = config.maxContentLength;
+  if (current == null || current < 0 || current > MAX_CONTROL_PLANE_RESPONSE_BYTES) {
+    config.maxContentLength = MAX_CONTROL_PLANE_RESPONSE_BYTES;
+  }
+  config[CONTROL_PLANE_LIMITED] = true;
+}
+
+/**
+ * Wraps a Node transport so a 402 applies {@link applyControlPlaneDownloadLimit}
+ * before axios starts buffering chunks.
+ *
+ * @param transport - Axios or follow-redirects transport
+ * @param config - Axios request configuration closed over by the adapter
+ * @returns A transport that limits 402 bodies during download
+ */
+function wrapNodeTransport(
+  transport: AxiosNodeTransport,
+  config: DownloadLimitedConfig,
+): AxiosNodeTransport {
+  return {
+    request(options, callback) {
+      return transport.request(options, response => {
+        if (response.statusCode === 402) {
+          applyControlPlaneDownloadLimit(config);
+        }
+        callback(response);
+      });
+    },
+  };
+}
+
+/**
+ * Wraps the fetch used by axios's fetch adapter so a 402 body is read through
+ * {@link readLimitedBody} before axios buffers it.
+ *
+ * @param config - Axios request configuration to mutate
+ */
+function wrapFetchForControlPlane(config: DownloadLimitedConfig): void {
+  const inner = config.env?.fetch ?? globalThis.fetch.bind(globalThis);
+  config.env = {
+    ...config.env,
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await inner(input, init);
+      if (response.status !== 402) {
+        return response;
+      }
+      const text = await readLimitedBody(response);
+      return new Response(text, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    },
+  };
+}
+
+/**
+ * Installs download-time 402 caps on the axios http and fetch adapters.
+ *
+ * @param config - Axios request configuration
+ * @returns The same config, with transport and fetch wrappers installed
+ */
+function installDownloadLimits(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
+  const limited = config as DownloadLimitedConfig;
+  wrapFetchForControlPlane(limited);
+  if (typeof process !== "undefined" && process.versions?.node) {
+    limited.transport = wrapNodeTransport(resolveNodeTransport(limited), limited);
+  }
+  return limited;
+}
+
+/**
+ * Maps adapter-level overflow errors back to {@link ResponseBodyTooLargeError}.
+ *
+ * @param error - Rejection from axios or a wrapped fetch adapter
+ * @returns The size-limit error when this was a 402 overflow, otherwise undefined
+ */
+function controlPlaneLimitError(error: unknown): ResponseBodyTooLargeError | undefined {
+  if (error instanceof ResponseBodyTooLargeError) {
+    return error;
+  }
+  if (error instanceof Error && error.cause instanceof ResponseBodyTooLargeError) {
+    return error.cause;
+  }
+
+  const axiosError = error as AxiosError & { cause?: unknown };
+  if (axiosError.cause instanceof ResponseBodyTooLargeError) {
+    return axiosError.cause;
+  }
+
+  const config = axiosError.config as DownloadLimitedConfig | undefined;
+  if (
+    config?.[CONTROL_PLANE_LIMITED] &&
+    axiosError.code === "ERR_BAD_RESPONSE" &&
+    typeof axiosError.message === "string" &&
+    axiosError.message.includes("maxContentLength")
+  ) {
+    return new ResponseBodyTooLargeError(MAX_CONTROL_PLANE_RESPONSE_BYTES);
+  }
+
+  return undefined;
 }
 
 /**
@@ -163,9 +337,19 @@ export function wrapAxiosWithPayment(
 ): AxiosInstance {
   const httpClient = client instanceof x402HTTPClient ? client : new x402HTTPClient(client);
 
+  if (typeof axiosInstance.defaults.adapter !== "function") {
+    axiosInstance.defaults.adapter = ["http", "fetch", "xhr"];
+  }
+  axiosInstance.interceptors.request.use(installDownloadLimits);
+
   axiosInstance.interceptors.response.use(
     response => response,
     async (error: AxiosError) => {
+      const tooLarge = controlPlaneLimitError(error);
+      if (tooLarge) {
+        return Promise.reject(tooLarge);
+      }
+
       if (!error.response || error.response.status !== 402) {
         return Promise.reject(error);
       }
