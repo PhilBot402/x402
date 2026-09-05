@@ -1,11 +1,10 @@
-import axios, {
+import {
   AxiosError,
   AxiosHeaders,
   AxiosInstance,
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from "axios";
-import http from "node:http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { wrapAxiosWithPayment, wrapAxiosWithPaymentFromConfig } from "./index";
 import type { x402Client, x402ClientConfig } from "@x402/core/client";
@@ -111,11 +110,7 @@ describe("wrapAxiosWithPayment()", () => {
 
     // Mock axios client
     mockAxiosClient = {
-      defaults: {},
       interceptors: {
-        request: {
-          use: vi.fn(),
-        },
         response: {
           use: vi.fn(),
         },
@@ -159,16 +154,6 @@ describe("wrapAxiosWithPayment()", () => {
   it("should return the axios client instance", () => {
     const result = wrapAxiosWithPayment(mockAxiosClient, mockClient);
     expect(result).toBe(mockAxiosClient);
-  });
-
-  it("prefers the fetch adapter and leaves an explicit http pin unchanged", () => {
-    const fetchClient = axios.create();
-    wrapAxiosWithPayment(fetchClient, mockClient);
-    expect(fetchClient.defaults.adapter).toBe("fetch");
-
-    const httpClient = axios.create({ adapter: "http" });
-    wrapAxiosWithPayment(httpClient, mockClient);
-    expect(httpClient.defaults.adapter).toBe("http");
   });
 
   it("should set up response interceptor", () => {
@@ -568,11 +553,7 @@ describe("wrapAxiosWithPaymentFromConfig()", () => {
     vi.resetAllMocks();
 
     mockAxiosClient = {
-      defaults: {},
       interceptors: {
-        request: {
-          use: vi.fn(),
-        },
         response: {
           use: vi.fn(),
         },
@@ -605,135 +586,5 @@ describe("wrapAxiosWithPaymentFromConfig()", () => {
 
     const result = wrapAxiosWithPaymentFromConfig(mockAxiosClient, config);
     expect(result).toBe(mockAxiosClient);
-  });
-});
-
-/**
- *
- * @param server
- */
-/**
- * Starts an HTTP server on an ephemeral localhost port.
- *
- * @param server - Server to bind
- * @returns Origin URL including the assigned port
- */
-function listen(server: http.Server): Promise<string> {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        reject(new Error("expected TCP address"));
-        return;
-      }
-      resolve(`http://127.0.0.1:${address.port}/`);
-    });
-  });
-}
-
-/**
- *
- * @param server
- */
-/**
- * Closes an HTTP server and waits for it to stop accepting connections.
- *
- * @param server - Server to close
- * @returns A promise that resolves when the server has closed
- */
-function closeServer(server: http.Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close(err => (err ? reject(err) : resolve()));
-  });
-}
-
-describe("wrapAxiosWithPayment download limits", () => {
-  let mockClient: x402Client;
-
-  beforeEach(async () => {
-    vi.resetAllMocks();
-    const { x402Client: MockX402Client, x402HTTPClient: MockX402HTTPClient } = await import(
-      "@x402/core/client"
-    );
-    mockClient = new MockX402Client() as unknown as x402Client;
-    (mockClient.createPaymentPayload as ReturnType<typeof vi.fn>).mockResolvedValue({
-      x402Version: 2,
-      resource: {
-        url: "https://api.example.com/resource",
-        description: "Test payment",
-        mimeType: "application/json",
-      },
-      accepted: {
-        scheme: "exact",
-        network: "eip155:84532",
-        amount: "1000000",
-        asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-        payTo: "0x1234567890123456789012345678901234567890",
-        maxTimeoutSeconds: 300,
-        extra: {},
-      },
-      payload: { signature: "0xmocksignature" },
-    });
-    (
-      MockX402HTTPClient.prototype.handlePaymentRequired as ReturnType<typeof vi.fn>
-    ).mockResolvedValue(null);
-    (
-      MockX402HTTPClient.prototype.processPaymentResult as ReturnType<typeof vi.fn>
-    ).mockResolvedValue({ recovered: false });
-  });
-
-  it("stops reading an oversized 402 before the server finishes writing", async () => {
-    const chunk = Buffer.alloc(64 * 1024, 0x61);
-    let bytesWritten = 0;
-    const server = http.createServer((_req, res) => {
-      res.writeHead(402, {
-        "Content-Type": "application/octet-stream",
-        "Transfer-Encoding": "chunked",
-      });
-      let i = 0;
-      const tick = () => {
-        if (i >= 80 || res.destroyed || res.writableEnded) {
-          if (!res.writableEnded && !res.destroyed) {
-            res.end();
-          }
-          return;
-        }
-        const ok = res.write(chunk);
-        bytesWritten += chunk.length;
-        i += 1;
-        if (ok) {
-          setTimeout(tick, 5);
-          return;
-        }
-        res.once("drain", () => setTimeout(tick, 5));
-      };
-      tick();
-    });
-
-    const url = await listen(server);
-    const api = wrapAxiosWithPayment(axios.create(), mockClient);
-    const error = await api.get(url).catch(caught => caught as Error);
-    await closeServer(server);
-
-    expect(error).toBeInstanceOf(ResponseBodyTooLargeError);
-    expect(bytesWritten).toBeLessThan(2 << 20);
-    expect(mockClient.createPaymentPayload).not.toHaveBeenCalled();
-  });
-
-  it("does not cap a large non-402 response", async () => {
-    const body = Buffer.alloc(1.5 * 1024 * 1024, 0x62);
-    const server = http.createServer((_req, res) => {
-      res.writeHead(200, { "Content-Type": "application/octet-stream" });
-      res.end(body);
-    });
-
-    const url = await listen(server);
-    const api = wrapAxiosWithPayment(axios.create(), mockClient);
-    const response = await api.get(url, { responseType: "arraybuffer" });
-    await closeServer(server);
-
-    expect(response.status).toBe(200);
-    expect(Buffer.byteLength(response.data)).toBe(body.length);
   });
 });

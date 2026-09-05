@@ -1,5 +1,5 @@
 import { x402Client, x402ClientConfig, x402HTTPClient } from "@x402/core/client";
-import { readLimitedBody, ResponseBodyTooLargeError } from "@x402/core/http";
+import { readLimitedBody } from "@x402/core/http";
 import { type PaymentRequired } from "@x402/core/types";
 import { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
@@ -68,76 +68,6 @@ function cloneAxiosHeaders(headers: InternalAxiosRequestConfig["headers"]): Axio
  */
 function setAxiosHeader(headers: AxiosHeaderRecord, key: string, value: string): void {
   headers[key] = value;
-}
-
-/**
- * Wraps the fetch used by axios's fetch adapter so a 402 body is read through
- * {@link readLimitedBody} before axios buffers it.
- *
- * @param config - Axios request configuration to mutate
- * @returns The same config with `env.fetch` wrapped
- */
-function installDownloadLimits(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
-  const inner = config.env?.fetch ?? globalThis.fetch.bind(globalThis);
-  config.env = {
-    ...config.env,
-    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = await inner(input, init);
-      if (response.status !== 402) {
-        return response;
-      }
-      const text = await readLimitedBody(response);
-      return new Response(text, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
-    },
-  };
-  return config;
-}
-
-/**
- * Prefers axios's fetch adapter when global fetch exists so 402 bodies can be
- * capped during the read. Leaves a custom function adapter, or an explicit
- * `http` / `xhr` pin, unchanged.
- *
- * @param adapter - Current axios instance default adapter
- * @returns Whether wrapAxiosWithPayment should switch the instance to fetch
- */
-function shouldPreferFetchAdapter(adapter: AxiosInstance["defaults"]["adapter"]): boolean {
-  if (typeof fetch !== "function") {
-    return false;
-  }
-  if (typeof adapter === "function") {
-    return false;
-  }
-  if (adapter === "http" || adapter === "xhr") {
-    return false;
-  }
-  return true;
-}
-
-/**
- * Maps adapter-level overflow errors back to {@link ResponseBodyTooLargeError}.
- *
- * @param error - Rejection from axios or a wrapped fetch adapter
- * @returns The size-limit error when this was a 402 overflow, otherwise undefined
- */
-function controlPlaneLimitError(error: unknown): ResponseBodyTooLargeError | undefined {
-  if (error instanceof ResponseBodyTooLargeError) {
-    return error;
-  }
-  if (error instanceof Error && error.cause instanceof ResponseBodyTooLargeError) {
-    return error.cause;
-  }
-
-  const axiosError = error as AxiosError & { cause?: unknown };
-  if (axiosError.cause instanceof ResponseBodyTooLargeError) {
-    return axiosError.cause;
-  }
-
-  return undefined;
 }
 
 /**
@@ -233,19 +163,9 @@ export function wrapAxiosWithPayment(
 ): AxiosInstance {
   const httpClient = client instanceof x402HTTPClient ? client : new x402HTTPClient(client);
 
-  if (shouldPreferFetchAdapter(axiosInstance.defaults.adapter)) {
-    axiosInstance.defaults.adapter = "fetch";
-  }
-  axiosInstance.interceptors.request.use(installDownloadLimits);
-
   axiosInstance.interceptors.response.use(
     response => response,
     async (error: AxiosError) => {
-      const tooLarge = controlPlaneLimitError(error);
-      if (tooLarge) {
-        return Promise.reject(tooLarge);
-      }
-
       if (!error.response || error.response.status !== 402) {
         return Promise.reject(error);
       }
