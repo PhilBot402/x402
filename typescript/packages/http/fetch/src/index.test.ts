@@ -588,6 +588,65 @@ describe("wrapFetchWithPayment()", () => {
     expect(closed.value).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it("rejects an oversized paid-retry 402 response", async () => {
+    const closed = { value: false };
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+      cancel() {
+        closed.value = true;
+      },
+    });
+    mockFetch
+      .mockResolvedValueOnce(
+        createResponse(402, validPaymentRequired, { "PAYMENT-REQUIRED": "encoded-header" }),
+      )
+      .mockResolvedValueOnce(new Response(stream, { status: 402, statusText: "Payment Required" }));
+
+    const error = await wrappedFetch("https://api.example.com/data", { method: "GET" }).catch(
+      caught => caught as Error,
+    );
+
+    expect(error).toBeInstanceOf(ResponseBodyTooLargeError);
+    expect(closed.value).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockClient.createPaymentPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an oversized recovery 402 response", async () => {
+    const { x402HTTPClient: MockX402HTTPClient } = await import("@x402/core/client");
+    (
+      MockX402HTTPClient.prototype.processPaymentResult as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({ recovered: true });
+
+    const closed = { value: false };
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+      cancel() {
+        closed.value = true;
+      },
+    });
+    mockFetch
+      .mockResolvedValueOnce(
+        createResponse(402, validPaymentRequired, { "PAYMENT-REQUIRED": "encoded-header" }),
+      )
+      .mockResolvedValueOnce(
+        createResponse(402, validPaymentRequired, { "PAYMENT-RESPONSE": "retry" }),
+      )
+      .mockResolvedValueOnce(new Response(stream, { status: 402, statusText: "Payment Required" }));
+
+    const error = await wrappedFetch("https://api.example.com/data", { method: "GET" }).catch(
+      caught => caught as Error,
+    );
+
+    expect(error).toBeInstanceOf(ResponseBodyTooLargeError);
+    expect(closed.value).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("wrapFetchWithPaymentFromConfig()", () => {
