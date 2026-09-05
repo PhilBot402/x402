@@ -161,6 +161,16 @@ describe("wrapAxiosWithPayment()", () => {
     expect(result).toBe(mockAxiosClient);
   });
 
+  it("prefers the fetch adapter and leaves an explicit http pin unchanged", () => {
+    const fetchClient = axios.create();
+    wrapAxiosWithPayment(fetchClient, mockClient);
+    expect(fetchClient.defaults.adapter).toBe("fetch");
+
+    const httpClient = axios.create({ adapter: "http" });
+    wrapAxiosWithPayment(httpClient, mockClient);
+    expect(httpClient.defaults.adapter).toBe("http");
+  });
+
   it("should set up response interceptor", () => {
     expect(mockAxiosClient.interceptors.response.use).toHaveBeenCalled();
   });
