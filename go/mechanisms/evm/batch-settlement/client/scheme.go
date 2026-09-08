@@ -58,8 +58,6 @@ type DepositStrategy func(ctx context.Context, c DepositStrategyContext) (Deposi
 
 // BatchSettlementEvmSchemeOptions configures the batched client scheme.
 //
-// DepositMultiplier sizes the deposit target when extra.minDeposit is absent,
-// and the lock ceiling when a spend cap is set. Default 5, minimum 3.
 // Use DepositStrategy for app-specific sizing or skipping.
 type BatchSettlementEvmSchemeOptions struct {
 	// DepositMultiplier sizes the deposit target when extra.minDeposit is absent,

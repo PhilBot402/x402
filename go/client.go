@@ -729,8 +729,7 @@ func (c *x402Client) CreatePaymentPayload(
 	}
 
 	// Get partial payload from mechanism.
-	// If the scheme supports extensions (e.g., EIP-2612), pass them for enrichment
-	// along with the resolved atomic spend cap.
+	// If the scheme supports extensions (e.g., EIP-2612), pass them for enrichment.
 	var partial types.PaymentPayload
 	var err error
 	payloadCtx := PaymentPayloadContext{Extensions: extensions}
