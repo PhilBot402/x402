@@ -429,6 +429,7 @@ class TestX402HTTPAdapter:
         mock_paid_402.status_code = 402
         mock_paid_402.headers = {"PAYMENT-RESPONSE": encoded_response}
         mock_paid_402.content = b"{}"
+        _attach_raw(mock_paid_402, b"{}")
 
         mock_success = MagicMock(spec=requests.Response)
         mock_success.status_code = 200
@@ -516,6 +517,115 @@ class TestX402HTTPAdapter:
             with pytest.raises(ResponseBodyTooLargeError):
                 adapter.send(mock_request)
         assert auth_raw.closed
+
+    def test_rejects_oversized_paid_retry_402(self) -> None:
+        required = PaymentRequired(
+            x402_version=2,
+            accepts=[make_payment_requirements()],
+        )
+        encoded_required = encode_payment_required_header(required)
+        paid_raw = _TrackingRaw(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1)
+
+        initial_402 = requests.Response()
+        initial_402.status_code = 402
+        initial_402.headers = {"PAYMENT-REQUIRED": encoded_required}
+        initial_402.raw = io.BytesIO(b"")
+        initial_402.url = "https://api.example.com/data"
+
+        paid_402 = requests.Response()
+        paid_402.status_code = 402
+        paid_402.headers = {}
+        paid_402.raw = paid_raw
+        paid_402.url = "https://api.example.com/data"
+
+        adapter = x402HTTPAdapter(MockX402ClientSync())
+        mock_request = MagicMock(spec=requests.PreparedRequest)
+        mock_request.headers = {}
+        mock_request.url = "https://api.example.com/data"
+        mock_retry_request = MagicMock(spec=requests.PreparedRequest)
+        mock_retry_request.headers = {}
+        mock_request.copy.return_value = mock_retry_request
+
+        def mock_send(req, **kwargs):
+            if req.headers.get(x402HTTPAdapter.RETRY_HEADER) == "1":
+                return paid_402
+            return initial_402
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", side_effect=mock_send):
+            with pytest.raises(ResponseBodyTooLargeError):
+                adapter.send(mock_request)
+        assert paid_raw.closed
+
+    def test_rejects_oversized_recovery_402(self) -> None:
+        required = PaymentRequired(
+            x402_version=2,
+            accepts=[make_payment_requirements()],
+        )
+        encoded_required = encode_payment_required_header(required)
+        settle = SettleResponse(
+            success=False,
+            error_reason="failed",
+            transaction="0x0",
+            network="eip155:8453",
+        )
+        encoded_response = encode_payment_response_header(settle)
+        recovery_raw = _TrackingRaw(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1)
+
+        initial_402 = requests.Response()
+        initial_402.status_code = 402
+        initial_402.headers = {"PAYMENT-REQUIRED": encoded_required}
+        initial_402.raw = io.BytesIO(b"")
+        initial_402.url = "https://api.example.com/data"
+
+        paid_402 = requests.Response()
+        paid_402.status_code = 402
+        paid_402.headers = {"PAYMENT-RESPONSE": encoded_response}
+        paid_402.raw = io.BytesIO(b"")
+        paid_402.url = "https://api.example.com/data"
+
+        recovery_402 = requests.Response()
+        recovery_402.status_code = 402
+        recovery_402.headers = {}
+        recovery_402.raw = recovery_raw
+        recovery_402.url = "https://api.example.com/data"
+
+        adapter = x402HTTPAdapter(MockRecoveringClientSync())
+        mock_request = MagicMock(spec=requests.PreparedRequest)
+        mock_request.headers = {}
+        mock_request.url = "https://api.example.com/data"
+        mock_retry_request = MagicMock(spec=requests.PreparedRequest)
+        mock_retry_request.headers = {}
+        mock_request.copy.return_value = mock_retry_request
+
+        def mock_send(req, **kwargs):
+            if req.headers.get(x402HTTPAdapter.RECOVERY_HEADER) == "1":
+                return recovery_402
+            if req.headers.get(x402HTTPAdapter.RETRY_HEADER) == "1":
+                return paid_402
+            return initial_402
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", side_effect=mock_send):
+            with pytest.raises(ResponseBodyTooLargeError):
+                adapter.send(mock_request)
+        assert recovery_raw.closed
+
+    def test_rejects_oversized_already_retried_402(self) -> None:
+        raw = _TrackingRaw(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1)
+        response_402 = requests.Response()
+        response_402.status_code = 402
+        response_402.headers = {}
+        response_402.raw = raw
+        response_402.url = "https://api.example.com/data"
+
+        adapter = x402HTTPAdapter(MockX402ClientSync())
+        mock_request = MagicMock(spec=requests.PreparedRequest)
+        mock_request.headers = {x402HTTPAdapter.RETRY_HEADER: "1"}
+        mock_request.url = "https://api.example.com/data"
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", return_value=response_402):
+            with pytest.raises(ResponseBodyTooLargeError):
+                adapter.send(mock_request)
+        assert raw.closed
 
 
 class _TrackingRaw:
