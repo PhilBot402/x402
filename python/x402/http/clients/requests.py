@@ -110,12 +110,20 @@ class x402HTTPAdapter(HTTPAdapter):
         is_retry = request.headers.get(self.RETRY_HEADER) == "1"
         is_recovery = request.headers.get(self.RECOVERY_HEADER) == "1"
 
-        # Make initial request
-        response = super().send(request, **kwargs)
+        caller_wants_stream = kwargs.pop("stream", False)
+        send_kwargs = {**kwargs, "stream": True}
+
+        def _finalize_response(resp: requests.Response) -> requests.Response:
+            if not caller_wants_stream:
+                _ = resp.content
+            return resp
+
+        # Make initial request (always stream so 402 bodies can be capped before buffering)
+        response = super().send(request, **send_kwargs)
 
         # Not a 402, return as-is
         if response.status_code != 402:
-            return response
+            return _finalize_response(response)
 
         # Already retried with payment, return the 402
         if is_retry or is_recovery:
@@ -145,9 +153,9 @@ class x402HTTPAdapter(HTTPAdapter):
             if hook_headers:
                 hook_request = request.copy()
                 hook_request.headers.update(hook_headers)
-                hook_response = super().send(hook_request, **kwargs)
+                hook_response = super().send(hook_request, **send_kwargs)
                 if hook_response.status_code != 402:
-                    return hook_response
+                    return _finalize_response(hook_response)
                 try:
                     read_limited_body(hook_response.raw)
                 finally:
@@ -168,7 +176,7 @@ class x402HTTPAdapter(HTTPAdapter):
             paid_request.headers[self.RETRY_HEADER] = "1"
 
             # Retry request with payment
-            paid_response = super().send(paid_request, **kwargs)
+            paid_response = super().send(paid_request, **send_kwargs)
 
             process_result = self._http_client.process_payment_result(
                 payment_payload,
@@ -186,16 +194,16 @@ class x402HTTPAdapter(HTTPAdapter):
                     "PAYMENT-RESPONSE,X-PAYMENT-RESPONSE"
                 )
                 recovery_request.headers[self.RECOVERY_HEADER] = "1"
-                recovery_response = super().send(recovery_request, **kwargs)
+                recovery_response = super().send(recovery_request, **send_kwargs)
                 # Fire hooks on retry response — no further recovery
                 self._http_client.process_payment_result(
                     fresh_payload,
                     recovery_response.headers.get,
                     recovery_response.status_code,
                 )
-                return recovery_response
+                return _finalize_response(recovery_response)
 
-            return paid_response
+            return _finalize_response(paid_response)
 
         except PaymentError:
             raise
