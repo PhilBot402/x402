@@ -1,4 +1,4 @@
-import {
+import axios, {
   AxiosError,
   AxiosHeaders,
   AxiosInstance,
