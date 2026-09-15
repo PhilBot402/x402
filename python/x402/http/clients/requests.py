@@ -118,6 +118,17 @@ class x402HTTPAdapter(HTTPAdapter):
                 _ = resp.content
             return resp
 
+        def _cap_returned_payment_required(resp: requests.Response) -> requests.Response:
+            if resp.status_code != 402:
+                return _finalize_response(resp)
+            try:
+                content = read_limited_body(resp.raw)
+            finally:
+                resp.close()
+            resp._content = content
+            resp._content_consumed = True
+            return resp
+
         # Make initial request (always stream so 402 bodies can be capped before buffering)
         response = super().send(request, **send_kwargs)
 
@@ -125,9 +136,9 @@ class x402HTTPAdapter(HTTPAdapter):
         if response.status_code != 402:
             return _finalize_response(response)
 
-        # Already retried with payment, return the 402
+        # Already retried with payment, return the capped 402
         if is_retry or is_recovery:
-            return response
+            return _cap_returned_payment_required(response)
 
         try:
             try:
@@ -185,6 +196,11 @@ class x402HTTPAdapter(HTTPAdapter):
             )
 
             if process_result.recovered:
+                if paid_response.status_code == 402:
+                    try:
+                        read_limited_body(paid_response.raw)
+                    finally:
+                        paid_response.close()
                 # Retry once with a fresh payload after recovery
                 fresh_payload = self._client.create_payment_payload(payment_required)
                 fresh_headers = self._http_client.encode_payment_signature_header(fresh_payload)
@@ -201,9 +217,9 @@ class x402HTTPAdapter(HTTPAdapter):
                     recovery_response.headers.get,
                     recovery_response.status_code,
                 )
-                return _finalize_response(recovery_response)
+                return _cap_returned_payment_required(recovery_response)
 
-            return _finalize_response(paid_response)
+            return _cap_returned_payment_required(paid_response)
 
         except PaymentError:
             raise

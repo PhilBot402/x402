@@ -298,7 +298,7 @@ class TestX402AsyncTransport:
         response = await transport.handle_async_request(request)
 
         # Should return 402 without retrying (no payment creation)
-        assert response == mock_402_response
+        assert response.status_code == 402
         assert len(mock_client.create_calls) == 0
 
     @pytest.mark.asyncio
@@ -502,6 +502,70 @@ class TestOversizedPaymentResponses:
                 httpx.Request("GET", "https://api.example.com/profile")
             )
         assert auth_stream.closed
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_paid_retry_402(self) -> None:
+        required = PaymentRequired(
+            x402_version=2,
+            accepts=[make_payment_requirements()],
+        )
+        encoded_required = encode_payment_required_header(required)
+        paid_stream = _TrackingAsyncStream(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1)
+        initial_402 = httpx.Response(
+            402,
+            headers={"PAYMENT-REQUIRED": encoded_required},
+            content=b"",
+        )
+        paid_402 = httpx.Response(402, stream=paid_stream)
+
+        mock_transport = AsyncMock()
+        mock_transport.handle_async_request = AsyncMock(side_effect=[initial_402, paid_402])
+        transport = x402AsyncTransport(MockX402Client(), mock_transport)
+
+        with pytest.raises(ResponseBodyTooLargeError):
+            await transport.handle_async_request(
+                httpx.Request("GET", "https://api.example.com/data")
+            )
+        assert paid_stream.closed
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_recovery_402(self) -> None:
+        required = PaymentRequired(
+            x402_version=2,
+            accepts=[make_payment_requirements()],
+        )
+        encoded_required = encode_payment_required_header(required)
+        settle = SettleResponse(
+            success=False,
+            error_reason="failed",
+            transaction="0x0",
+            network="eip155:8453",
+        )
+        encoded_response = encode_payment_response_header(settle)
+        recovery_stream = _TrackingAsyncStream(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1)
+        initial_402 = httpx.Response(
+            402,
+            headers={"PAYMENT-REQUIRED": encoded_required},
+            content=b"",
+        )
+        paid_402 = httpx.Response(
+            402,
+            headers={"PAYMENT-RESPONSE": encoded_response},
+            content=b"",
+        )
+        recovery_402 = httpx.Response(402, stream=recovery_stream)
+
+        mock_transport = AsyncMock()
+        mock_transport.handle_async_request = AsyncMock(
+            side_effect=[initial_402, paid_402, recovery_402]
+        )
+        transport = x402AsyncTransport(MockRecoveringClient(), mock_transport)
+
+        with pytest.raises(ResponseBodyTooLargeError):
+            await transport.handle_async_request(
+                httpx.Request("GET", "https://api.example.com/data")
+            )
+        assert recovery_stream.closed
 
 
 # =============================================================================
