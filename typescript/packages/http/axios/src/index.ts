@@ -1,5 +1,5 @@
 import { x402Client, x402ClientConfig, x402HTTPClient } from "@x402/core/client";
-import { readLimitedBody } from "@x402/core/http";
+import { MAX_CONTROL_PLANE_RESPONSE_BYTES, ResponseBodyTooLargeError } from "@x402/core/http";
 import { type PaymentRequired } from "@x402/core/types";
 import { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
@@ -73,29 +73,37 @@ function setAxiosHeader(headers: AxiosHeaderRecord, key: string, value: string):
 }
 
 /**
- * Converts an Axios response body into a fetch BodyInit so {@link readLimitedBody}
- * can apply the same control-plane cap used by the fetch client.
+ * Ensures an Axios `response.data` value stays within the control-plane body cap.
+ * Axios buffers response bodies, so byte length can be checked without streaming.
  *
- * @param data - Axios `response.data` for a 402 payment-required response
- * @returns A BodyInit that {@link readLimitedBody} can stream, or null when empty
+ * @param data - Axios `response.data` for a payment-required or retry response
+ * @param maxBytes - Maximum allowed body size in bytes
+ * @throws {@link ResponseBodyTooLargeError} when the buffered body exceeds `maxBytes`
  */
-function toAxiosBodyInit(data: unknown): BodyInit | null {
+function assertAxiosResponseBodyWithinLimit(
+  data: unknown,
+  maxBytes: number = MAX_CONTROL_PLANE_RESPONSE_BYTES,
+): void {
   if (data == null) {
-    return null;
+    return;
   }
+
+  let byteLength: number;
   if (typeof data === "string") {
-    return data;
+    byteLength = new TextEncoder().encode(data).byteLength;
+  } else if (data instanceof ArrayBuffer) {
+    byteLength = data.byteLength;
+  } else if (data instanceof Uint8Array) {
+    byteLength = data.byteLength;
+  } else if (typeof Blob !== "undefined" && data instanceof Blob) {
+    byteLength = data.size;
+  } else {
+    byteLength = new TextEncoder().encode(JSON.stringify(data)).byteLength;
   }
-  if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
-    return data;
+
+  if (byteLength > maxBytes) {
+    throw new ResponseBodyTooLargeError(maxBytes);
   }
-  if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return data;
-  }
-  if (typeof ReadableStream !== "undefined" && data instanceof ReadableStream) {
-    return data;
-  }
-  return JSON.stringify(data);
 }
 
 /**
@@ -184,7 +192,7 @@ export function wrapAxiosWithPayment(
 
       try {
         const response = error.response!; // Already validated above
-        await readLimitedBody(new Response(toAxiosBodyInit(response.data)));
+        assertAxiosResponseBodyWithinLimit(response.data);
 
         // Parse payment requirements from response
         let paymentRequired: PaymentRequired;
@@ -219,7 +227,7 @@ export function wrapAxiosWithPayment(
           if (hookResponse.status !== 402) {
             return hookResponse; // Hook succeeded
           }
-          await readLimitedBody(new Response(toAxiosBodyInit(hookResponse.data)));
+          assertAxiosResponseBodyWithinLimit(hookResponse.data);
           // Hook's retry got 402, fall through to payment
         }
 
