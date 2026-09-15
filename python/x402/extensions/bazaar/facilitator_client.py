@@ -261,12 +261,13 @@ class BazaarExtension:
 
         http_client = self._client._get_client()  # type: ignore[attr-defined]
 
-        response = http_client.get(
+        request = http_client.build_request(
+            "GET",
             endpoint,
             headers=headers,
             params=query_params if query_params else None,
-            stream=True,
         )
+        response = http_client.send(request, stream=True)
         try:
             body = read_limited_body(response.iter_bytes(), MAX_DISCOVERY_RESPONSE_BYTES)
         except ResponseBodyTooLargeError:
@@ -346,12 +347,13 @@ class BazaarExtension:
 
         http_client = self._client._get_client()  # type: ignore[attr-defined]
 
-        response = http_client.get(
+        request = http_client.build_request(
+            "GET",
             endpoint,
             headers=headers,
             params=query_params,
-            stream=True,
         )
+        response = http_client.send(request, stream=True)
         try:
             body = read_limited_body(response.iter_bytes(), MAX_DISCOVERY_RESPONSE_BYTES)
         except ResponseBodyTooLargeError:

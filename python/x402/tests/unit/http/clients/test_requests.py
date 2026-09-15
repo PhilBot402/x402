@@ -143,11 +143,43 @@ class TestX402HTTPAdapter:
         mock_response.status_code = 200
         mock_response.content = b'{"data": "test"}'
 
-        with patch.object(requests.adapters.HTTPAdapter, "send", return_value=mock_response):
+        captured_kwargs: list[dict] = []
+
+        def mock_send(_req, **kwargs):
+            captured_kwargs.append(kwargs)
+            return mock_response
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", side_effect=mock_send):
             response = adapter.send(mock_request)
 
         assert response == mock_response
         assert len(mock_client.create_calls) == 0
+        assert captured_kwargs[0]["stream"] is True
+
+    def test_send_honors_caller_stream_kwarg(self):
+        """Caller stream=True skips eager content materialization on non-402."""
+        mock_client = MockX402ClientSync()
+        adapter = x402HTTPAdapter(mock_client)
+
+        mock_request = MagicMock(spec=requests.PreparedRequest)
+        mock_request.headers = {}
+
+        content_reads = 0
+
+        def read_content(_self: requests.Response) -> bytes:
+            nonlocal content_reads
+            content_reads += 1
+            return b"{}"
+
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
+        type(mock_response).content = property(read_content)
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", return_value=mock_response):
+            adapter.send(mock_request, stream=True)
+            assert content_reads == 0
+            adapter.send(mock_request)
+            assert content_reads == 1
 
     def test_send_402_triggers_payment_retry(self):
         """Test that 402 response triggers payment creation and retry."""
