@@ -3,6 +3,26 @@ import { readLimitedBody } from "@x402/core/http";
 import { type PaymentRequired } from "@x402/core/types";
 
 /**
+ * Caps a 402 that will be returned to the caller. Paid resource payloads are left
+ * untouched. The body is re-materialized so callers can still read it.
+ *
+ * @param response - Fetch response from the resource server
+ * @returns The original response, or a 402 with a bounded body
+ */
+async function capReturnedPaymentRequired(response: Response): Promise<Response> {
+  if (response.status !== 402) {
+    return response;
+  }
+
+  const body = await readLimitedBody(response);
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+/**
  * Enables the payment of APIs using the x402 payment protocol v2.
  *
  * This function wraps the native fetch API to automatically handle 402 Payment Required responses
@@ -133,6 +153,9 @@ export function wrapFetchWithPayment(
     );
 
     if (result.recovered) {
+      if (secondResponse.status === 402) {
+        await readLimitedBody(secondResponse);
+      }
       // Hook fixed state — retry with fresh payload (bounded to one recovery)
       const freshPayload = await client.createPaymentPayload(paymentRequired);
       const retryHeaders = httpClient.encodePaymentSignatureHeader(freshPayload);
@@ -151,10 +174,10 @@ export function wrapFetchWithPayment(
         name => retryResponse.headers.get(name),
         retryResponse.status,
       );
-      return retryResponse;
+      return capReturnedPaymentRequired(retryResponse);
     }
 
-    return secondResponse;
+    return capReturnedPaymentRequired(secondResponse);
   };
 }
 

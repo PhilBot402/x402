@@ -174,7 +174,12 @@ export function wrapAxiosWithPayment(
   const httpClient = client instanceof x402HTTPClient ? client : new x402HTTPClient(client);
 
   axiosInstance.interceptors.response.use(
-    response => response,
+    response => {
+      if (response.status === 402) {
+        assertAxiosResponseBodyWithinLimit(response.data);
+      }
+      return response;
+    },
     async (error: AxiosError) => {
       if (!error.response || error.response.status !== 402) {
         return Promise.reject(error);
@@ -187,6 +192,7 @@ export function wrapAxiosWithPayment(
 
       // Check if this is already a retry to prevent infinite loops
       if ((originalConfig as X402RetryConfig).__is402Retry) {
+        assertAxiosResponseBodyWithinLimit(error.response.data);
         return Promise.reject(error);
       }
 
@@ -263,6 +269,9 @@ export function wrapAxiosWithPayment(
 
         // Retry the request with payment
         const secondResponse = await axiosInstance.request(paidConfig);
+        if (secondResponse.status === 402) {
+          assertAxiosResponseBodyWithinLimit(secondResponse.data);
+        }
 
         // Fire payment response hooks and handle recovery
         const getResponseHeader = (name: string) => {
@@ -289,6 +298,9 @@ export function wrapAxiosWithPayment(
             "PAYMENT-RESPONSE,X-PAYMENT-RESPONSE",
           );
           const retryResponse = await axiosInstance.request(retryConfig);
+          if (retryResponse.status === 402) {
+            assertAxiosResponseBodyWithinLimit(retryResponse.data);
+          }
           // Process the final retry result without another recovery attempt.
           const getRetryHeader = (name: string) => {
             const value = retryResponse.headers[name] ?? retryResponse.headers[name.toLowerCase()];
