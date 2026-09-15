@@ -16,7 +16,7 @@ import (
 	"github.com/x402-foundation/x402/go/v2/types"
 )
 
-// UptoEvmScheme implements SchemeNetworkClient and ExtensionAwareClient for EVM upto payments.
+// UptoEvmScheme implements SchemeNetworkClient for EVM upto payments.
 // Always uses Permit2 (no EIP-3009 path).
 type UptoEvmScheme struct {
 	signer evm.ClientEvmSigner
@@ -43,15 +43,9 @@ func (c *UptoEvmScheme) FindDefaultAsset(asset string, network x402.Network) *x4
 }
 
 // CreatePaymentPayload creates a V2 payment payload for the upto scheme (always Permit2).
+// If the server advertises eip2612GasSponsoring and the signer supports ReadContract,
+// automatically signs an EIP-2612 permit when Permit2 allowance is insufficient.
 func (c *UptoEvmScheme) CreatePaymentPayload(
-	ctx context.Context,
-	requirements types.PaymentRequirements,
-) (types.PaymentPayload, error) {
-	return CreateUptoPermit2Payload(ctx, c.signer, requirements)
-}
-
-// CreatePaymentPayloadWithExtensions creates a payment payload with extension support.
-func (c *UptoEvmScheme) CreatePaymentPayloadWithExtensions(
 	ctx context.Context,
 	requirements types.PaymentRequirements,
 	payloadCtx x402.PaymentPayloadContext,

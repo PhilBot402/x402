@@ -32,7 +32,7 @@ func (m *mockSchemeNetworkClientV1) FindDefaultAsset(asset string, network Netwo
 	return &DefaultAsset{Asset: asset, Decimals: 6, Symbol: "MOCK"}
 }
 
-func (m *mockSchemeNetworkClientV1) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirementsV1) (types.PaymentPayloadV1, error) {
+func (m *mockSchemeNetworkClientV1) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirementsV1, _ PaymentPayloadContext) (types.PaymentPayloadV1, error) {
 	return types.PaymentPayloadV1{
 		X402Version: 1,
 		Scheme:      m.scheme,
@@ -71,7 +71,11 @@ func (m *mockSchemeNetworkClientV2) FindDefaultAsset(asset string, network Netwo
 	return &DefaultAsset{Asset: asset, Decimals: 6, Symbol: "MOCK"}
 }
 
-func (m *mockSchemeNetworkClientV2) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements) (types.PaymentPayload, error) {
+func (m *mockSchemeNetworkClientV2) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements, payloadCtx PaymentPayloadContext) (types.PaymentPayload, error) {
+	m.createPaymentPayloadCalls = append(m.createPaymentPayloadCalls, mockCreatePaymentPayloadCall{
+		requirements: requirements,
+		context:      payloadCtx,
+	})
 	return types.PaymentPayload{
 		X402Version: 2,
 		Payload: map[string]interface{}{
@@ -79,18 +83,6 @@ func (m *mockSchemeNetworkClientV2) CreatePaymentPayload(ctx context.Context, re
 			"from":      "0xmock",
 		},
 	}, nil
-}
-
-func (m *mockSchemeNetworkClientV2) CreatePaymentPayloadWithExtensions(
-	ctx context.Context,
-	requirements types.PaymentRequirements,
-	payloadCtx PaymentPayloadContext,
-) (types.PaymentPayload, error) {
-	m.createPaymentPayloadCalls = append(m.createPaymentPayloadCalls, mockCreatePaymentPayloadCall{
-		requirements: requirements,
-		context:      payloadCtx,
-	})
-	return m.CreatePaymentPayload(ctx, requirements)
 }
 
 func TestNewx402Client(t *testing.T) {
@@ -545,6 +537,7 @@ func (m *mockFailableV1) Scheme() string { return "mock" }
 func (m *mockFailableV1) CreatePaymentPayload(
 	_ context.Context,
 	_ types.PaymentRequirementsV1,
+	_ PaymentPayloadContext,
 ) (types.PaymentPayloadV1, error) {
 	if m.fail {
 		return types.PaymentPayloadV1{}, fmt.Errorf("fail")
@@ -558,6 +551,7 @@ func (m *mockFailableV2) Scheme() string { return "mock" }
 func (m *mockFailableV2) CreatePaymentPayload(
 	_ context.Context,
 	_ types.PaymentRequirements,
+	_ PaymentPayloadContext,
 ) (types.PaymentPayload, error) {
 	if m.fail {
 		return types.PaymentPayload{}, fmt.Errorf("fail")

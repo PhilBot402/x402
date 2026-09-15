@@ -28,7 +28,7 @@ type MoneyParser func(amount string, network Network) (*AssetAmount, error)
 // SchemeNetworkClientV1 is implemented by client-side V1 payment mechanisms
 type SchemeNetworkClientV1 interface {
 	Scheme() string
-	CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirementsV1) (types.PaymentPayloadV1, error)
+	CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirementsV1, payloadCtx PaymentPayloadContext) (types.PaymentPayloadV1, error)
 }
 
 // SchemeNetworkFacilitatorV1 is implemented by facilitator-side V1 payment mechanisms
@@ -86,24 +86,14 @@ type SchemeNetworkFacilitatorV1 interface {
 // SchemeNetworkClient is implemented by client-side payment mechanisms (V2)
 type SchemeNetworkClient interface {
 	Scheme() string
-	CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements) (types.PaymentPayload, error)
+	CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements, payloadCtx PaymentPayloadContext) (types.PaymentPayload, error)
 }
 
-// PaymentPayloadContext is passed to scheme CreatePaymentPayloadWithExtensions.
+// PaymentPayloadContext is passed to scheme CreatePaymentPayload.
 // MaxAmountPerPayment is the resolved atomic spend cap; omitted when uncapped.
 type PaymentPayloadContext struct {
 	Extensions          map[string]interface{}
 	MaxAmountPerPayment string
-}
-
-// ExtensionAwareClient is an optional interface for schemes that can handle extensions.
-// When a scheme implements this, x402Client will call CreatePaymentPayloadWithExtensions
-// instead of CreatePaymentPayload, passing server-declared extensions and the resolved
-// atomic spend cap so the scheme can enrich the payload (e.g., EIP-2612 gas sponsoring)
-// and size capital-locking deposits.
-type ExtensionAwareClient interface {
-	SchemeNetworkClient
-	CreatePaymentPayloadWithExtensions(ctx context.Context, requirements types.PaymentRequirements, payloadCtx PaymentPayloadContext) (types.PaymentPayload, error)
 }
 
 // DefaultAssetFinder is an optional reverse lookup for USD spend caps.

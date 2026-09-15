@@ -136,14 +136,9 @@ func (c *BatchSettlementEvmScheme) FindDefaultAsset(asset string, network x402.N
 //
 // The client loads local session state, falls back to onchain recovery when
 // storage is empty, then chooses deposit vs voucher from the resulting context.
+// Permit2 deposits may attach EIP-2612 or ERC-20 approval gas sponsoring when
+// payloadCtx.Extensions advertises those keys.
 func (c *BatchSettlementEvmScheme) CreatePaymentPayload(
-	ctx context.Context,
-	requirements types.PaymentRequirements,
-) (types.PaymentPayload, error) {
-	return c.createPaymentPayload(ctx, requirements, x402.PaymentPayloadContext{})
-}
-
-func (c *BatchSettlementEvmScheme) createPaymentPayload(
 	ctx context.Context,
 	requirements types.PaymentRequirements,
 	payloadCtx x402.PaymentPayloadContext,
@@ -239,13 +234,23 @@ func (c *BatchSettlementEvmScheme) createPaymentPayload(
 		if err != nil {
 			return types.PaymentPayload{}, err
 		}
+		var payload types.PaymentPayload
 		if resolved.skip {
-			return c.createVoucherPayload(ctx, channelId, channelConfig, newCumulative.String(), requirements)
+			payload, err = c.createVoucherPayload(ctx, channelId, channelConfig, newCumulative.String(), requirements)
+		} else {
+			payload, err = c.createDepositPayload(ctx, channelConfig, resolved.amount, newCumulative.String(), requirements)
 		}
-		return c.createDepositPayload(ctx, channelConfig, resolved.amount, newCumulative.String(), requirements)
+		if err != nil {
+			return types.PaymentPayload{}, err
+		}
+		return c.enrichDepositWithGasSponsoring(ctx, requirements, payload, payloadCtx)
 	}
 
-	return c.createVoucherPayload(ctx, channelId, channelConfig, newCumulative.String(), requirements)
+	payload, err := c.createVoucherPayload(ctx, channelId, channelConfig, newCumulative.String(), requirements)
+	if err != nil {
+		return types.PaymentPayload{}, err
+	}
+	return c.enrichDepositWithGasSponsoring(ctx, requirements, payload, payloadCtx)
 }
 
 // resolveDepositAmountResult is the internal output of resolveDepositAmount.

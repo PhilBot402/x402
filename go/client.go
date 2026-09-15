@@ -443,6 +443,28 @@ func resolveAtomicSpendCap(
 	return ConvertToTokenAmount(parsed, defaultAsset.Decimals)
 }
 
+func (c *x402Client) resolvePaymentPayloadContext(
+	client any,
+	network Network,
+	asset string,
+	extensions map[string]interface{},
+) (PaymentPayloadContext, error) {
+	payloadCtx := PaymentPayloadContext{Extensions: extensions}
+	if !c.spendControlsEnabled {
+		return payloadCtx, nil
+	}
+	var defaultAsset *DefaultAsset
+	if finder, ok := client.(DefaultAssetFinder); ok {
+		defaultAsset = finder.FindDefaultAsset(asset, network)
+	}
+	cap, err := resolveAtomicSpendCap(c.spendControls, network, asset, defaultAsset)
+	if err != nil {
+		return PaymentPayloadContext{}, err
+	}
+	payloadCtx.MaxAmountPerPayment = cap
+	return payloadCtx, nil
+}
+
 // applySpendControls filters by spend controls (default-asset allowlist → opt-in assets → caps).
 // Keeps any accept that fits so a mixed offer can still pay the affordable option.
 func (c *x402Client) applySpendControls(x402Version int, requirements []PaymentRequirementsView) ([]PaymentRequirementsView, error) {
@@ -651,7 +673,11 @@ func (c *x402Client) CreatePaymentPayloadV1(
 		}
 	}
 
-	payload, err := client.CreatePaymentPayload(ctx, requirements)
+	payloadCtx, err := c.resolvePaymentPayloadContext(client, network, requirements.Asset, nil)
+	var payload types.PaymentPayloadV1
+	if err == nil {
+		payload, err = client.CreatePaymentPayload(ctx, requirements, payloadCtx)
+	}
 	if err != nil {
 		for _, hook := range c.onPaymentCreationFailureHooks {
 			result, hookErr := hook(PaymentCreationFailureContext{
@@ -728,29 +754,10 @@ func (c *x402Client) CreatePaymentPayload(
 		}
 	}
 
-	// Get partial payload from mechanism.
-	// If the scheme supports extensions (e.g., EIP-2612), pass them for enrichment.
+	payloadCtx, err := c.resolvePaymentPayloadContext(client, network, requirements.Asset, extensions)
 	var partial types.PaymentPayload
-	var err error
-	payloadCtx := PaymentPayloadContext{Extensions: extensions}
-	if c.spendControlsEnabled {
-		var defaultAsset *DefaultAsset
-		if finder, ok := client.(DefaultAssetFinder); ok {
-			defaultAsset = finder.FindDefaultAsset(requirements.Asset, network)
-		}
-		cap, capErr := resolveAtomicSpendCap(c.spendControls, network, requirements.Asset, defaultAsset)
-		if capErr != nil {
-			err = capErr
-		} else {
-			payloadCtx.MaxAmountPerPayment = cap
-		}
-	}
 	if err == nil {
-		if extAware, ok := client.(ExtensionAwareClient); ok {
-			partial, err = extAware.CreatePaymentPayloadWithExtensions(ctx, requirements, payloadCtx)
-		} else {
-			partial, err = client.CreatePaymentPayload(ctx, requirements)
-		}
+		partial, err = client.CreatePaymentPayload(ctx, requirements, payloadCtx)
 	}
 	if err != nil {
 		for _, hook := range c.onPaymentCreationFailureHooks {
