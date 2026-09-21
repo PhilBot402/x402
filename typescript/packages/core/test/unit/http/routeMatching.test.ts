@@ -54,11 +54,13 @@ describe("normalizeDecodedPath", () => {
     ["/api?query=1", "/api"],
     ["/api#fragment", "/api"],
     ["", "/"],
-    // Already-decoded input is passed through, not re-decoded.
-    ["/api/x%41", "/api/x%41"],
     ["/api/premium", "/api/premium"],
   ])("normalizes %s to %s", (inputPath, expected) => {
     expect(normalizeDecodedPath(inputPath)).toBe(expected);
+  });
+
+  it("does not re-decode percent-escapes", () => {
+    expect(normalizeDecodedPath("/api/x%41")).toBe("/api/x%41");
   });
 });
 

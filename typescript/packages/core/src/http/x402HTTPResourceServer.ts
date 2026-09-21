@@ -273,7 +273,6 @@ export interface HTTPRequestContext {
   method: string;
   paymentHeader?: string;
   routePattern?: string;
-  // Framework-decoded routing view, if distinct from `path`.
   decodedPath?: string;
 }
 
