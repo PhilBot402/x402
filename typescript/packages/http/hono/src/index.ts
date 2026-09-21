@@ -16,6 +16,7 @@ import {
 } from "@x402/core/server";
 import { SchemeNetworkServer, Network } from "@x402/core/types";
 import { Context, MiddlewareHandler } from "hono";
+import { basePath } from "hono/route";
 import { HonoAdapter } from "./adapter";
 
 /**
@@ -65,6 +66,39 @@ function facilitatorErrorResponse(c: Context, error: FacilitatorResponseError): 
 function internalErrorResponse(c: Context, error: unknown): Response {
   console.error(error);
   return c.json({ error: "Internal Server Error" }, 500);
+}
+
+/**
+ * `c.req.path` with percent-escapes decoded and any Hono `basePath` mount
+ * prefix stripped, mirroring Starlette's get_route_path so mounted apps
+ * stay protected.
+ *
+ * @param c - Hono context
+ * @returns Decoded path relative to the app mount, or the original path if decoding fails
+ */
+function decodedRoutePath(c: Context): string {
+  let path: string;
+  try {
+    path = decodeURIComponent(c.req.path);
+  } catch {
+    path = c.req.path;
+  }
+  let rootPath = "";
+  try {
+    rootPath = basePath(c);
+  } catch {
+    return path;
+  }
+  if (!rootPath || rootPath === "/" || !path.startsWith(rootPath)) {
+    return path;
+  }
+  if (path === rootPath) {
+    return "";
+  }
+  if (path[rootPath.length] === "/") {
+    return path.slice(rootPath.length);
+  }
+  return path;
 }
 
 /**
@@ -155,9 +189,13 @@ export function paymentMiddlewareFromHTTPServer(
   return async (c: Context, next: () => Promise<void>) => {
     // Create adapter and context
     const adapter = new HonoAdapter(c);
+    // Hono matches wildcard/param routes on the escaped path but literal
+    // routes on the decoded path, so match both.
+    const path = c.req.path;
     const context: HTTPRequestContext = {
       adapter,
-      path: c.req.path,
+      path,
+      decodedPath: decodedRoutePath(c),
       method: c.req.method,
       paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment"),
     };

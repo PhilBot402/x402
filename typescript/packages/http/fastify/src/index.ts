@@ -230,6 +230,22 @@ function sendInternalError(reply: FastifyReply, error: unknown): void {
 }
 
 /**
+ * Decode a request path into the view Fastify's router uses for literal
+ * segments (`%2F` becomes `/`). Malformed escapes keep the original path
+ * so matching can still consult the escaped representation.
+ *
+ * @param path - Request path, possibly still percent-encoded
+ * @returns Decoded path, or the original path if decoding fails
+ */
+function decodedRoutePath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
  * Configuration for registering a payment scheme with a specific network.
  */
 export interface SchemeRegistration {
@@ -333,9 +349,12 @@ export function paymentMiddlewareFromHTTPServer(
   app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
     const path = request.url.split("?")[0];
     const adapter = new FastifyAdapter(request);
+    // Fastify matches wildcard/param routes on the escaped path but literal
+    // routes on the decoded path, so match both.
     const context: HTTPRequestContext = {
       adapter,
       path,
+      decodedPath: decodedRoutePath(path),
       method: request.method,
       paymentHeader:
         (request.headers["payment-signature"] as string | undefined) ||

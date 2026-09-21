@@ -273,6 +273,9 @@ export interface HTTPRequestContext {
   method: string;
   paymentHeader?: string;
   routePattern?: string;
+  // The framework's own decoded routing view of the path (e.g. Express
+  // `req.path` after URI decoding, or Hono `c.req.path`), if distinct from `path`.
+  decodedPath?: string;
 }
 
 /**
@@ -533,7 +536,7 @@ export class x402HTTPResourceServer {
     const { adapter, path } = context;
 
     // Find matching route
-    const routeMatch = this.getRouteConfig(path, method);
+    const routeMatch = this.getRouteConfig(path, method, context.decodedPath);
     if (!routeMatch) {
       return { type: "no-payment-required" }; // No payment required for this route
     }
@@ -913,7 +916,7 @@ export class x402HTTPResourceServer {
    */
   requiresPayment(context: HTTPRequestContext): boolean {
     const method = context.method || context.adapter.getMethod();
-    return this.getRouteConfig(context.path, method) !== undefined;
+    return this.getRouteConfig(context.path, method, context.decodedPath) !== undefined;
   }
 
   /**
@@ -1045,7 +1048,11 @@ export class x402HTTPResourceServer {
   ): Promise<HTTPResponseInstructions> {
     const settlementHeaders = failure.headers;
     const routeConfig = transportContext
-      ? this.getRouteConfig(transportContext.request.path, transportContext.request.method)
+      ? this.getRouteConfig(
+          transportContext.request.path,
+          transportContext.request.method,
+          transportContext.request.decodedPath,
+        )
       : undefined;
 
     const customBody = routeConfig?.config.settlementFailedResponseBody
@@ -1228,24 +1235,39 @@ export class x402HTTPResourceServer {
   /**
    * Get route configuration for a request
    *
+   * Checks the escaped `path` first, then the framework's `decodedPath`
+   * (if distinct), so a route can't be bypassed via either representation.
+   *
    * @param path - Request path
    * @param method - HTTP method
+   * @param decodedPath - Framework decoded routing view of the path, if distinct from path
    * @returns Route configuration and pattern, or undefined if no match
    */
   private getRouteConfig(
     path: string,
     method: string,
+    decodedPath?: string,
   ): { config: RouteConfig; pattern: string } | undefined {
-    const normalizedPath = this.normalizePath(path);
     const upperMethod = method.toUpperCase();
 
-    const matchingRoute = this.compiledRoutes.find(
-      route =>
-        route.regex.test(normalizedPath) && (route.verb === "*" || route.verb === upperMethod),
-    );
+    const findMatch = (candidate: string): { config: RouteConfig; pattern: string } | undefined => {
+      const matchingRoute = this.compiledRoutes.find(
+        route => route.regex.test(candidate) && (route.verb === "*" || route.verb === upperMethod),
+      );
+      if (!matchingRoute) return undefined;
+      return { config: matchingRoute.config, pattern: matchingRoute.pattern };
+    };
 
-    if (!matchingRoute) return undefined;
-    return { config: matchingRoute.config, pattern: matchingRoute.pattern };
+    const match = findMatch(this.normalizePath(path));
+    if (match !== undefined) {
+      return match;
+    }
+
+    if (decodedPath !== undefined && decodedPath !== path) {
+      return findMatch(this.normalizeDecodedPath(decodedPath));
+    }
+
+    return undefined;
   }
 
   /**
@@ -1414,6 +1436,19 @@ export class x402HTTPResourceServer {
       .join("/");
 
     return normalized.replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
+  }
+
+  /**
+   * Normalize an already framework-decoded path. Does not decode
+   * percent-escapes, unlike `normalizePath`, since this input was
+   * already decoded once by the router.
+   *
+   * @param path - Framework-decoded path
+   * @returns Normalized path
+   */
+  private normalizeDecodedPath(path: string): string {
+    const pathWithoutQuery = path.split(/[?#]/)[0];
+    return pathWithoutQuery.replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1") || "/";
   }
 
   /**

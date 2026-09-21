@@ -66,6 +66,22 @@ function sendInternalError(res: Response, error: unknown): void {
 }
 
 /**
+ * Decode a request path into the view Express's router uses for literal
+ * segments (`%2F` becomes `/`). Malformed escapes keep the original path
+ * so matching can still consult the escaped representation.
+ *
+ * @param path - Request path, possibly still percent-encoded
+ * @returns Decoded path, or the original path if decoding fails
+ */
+function decodedRoutePath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
  * Express payment middleware for x402 protocol (direct HTTP server instance).
  *
  * Use this when you need to configure HTTP-level hooks.
@@ -153,9 +169,13 @@ export function paymentMiddlewareFromHTTPServer(
   return async (req: Request, res: Response, next: NextFunction) => {
     // Create adapter and context
     const adapter = new ExpressAdapter(req);
+    // Express matches wildcard/param routes on the escaped path but literal
+    // routes on the decoded path, so match both.
+    const path = req.path;
     const context: HTTPRequestContext = {
       adapter,
-      path: req.path,
+      path,
+      decodedPath: decodedRoutePath(path),
       method: req.method,
       paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment"),
     };
