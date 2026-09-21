@@ -69,12 +69,10 @@ function internalErrorResponse(c: Context, error: unknown): Response {
 }
 
 /**
- * `c.req.path` with percent-escapes decoded and any Hono `basePath` mount
- * prefix stripped, mirroring Starlette's get_route_path so mounted apps
- * stay protected.
+ * Decode `c.req.path` and strip the Hono `basePath` mount prefix.
  *
  * @param c - Hono context
- * @returns Decoded path relative to the app mount, or the original path if decoding fails
+ * @returns Decoded path relative to the app mount
  */
 function decodedRoutePath(c: Context): string {
   let path: string;
@@ -189,8 +187,6 @@ export function paymentMiddlewareFromHTTPServer(
   return async (c: Context, next: () => Promise<void>) => {
     // Create adapter and context
     const adapter = new HonoAdapter(c);
-    // Hono matches wildcard/param routes on the escaped path but literal
-    // routes on the decoded path, so match both.
     const path = c.req.path;
     const context: HTTPRequestContext = {
       adapter,

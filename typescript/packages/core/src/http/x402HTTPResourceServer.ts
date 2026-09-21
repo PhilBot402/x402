@@ -273,8 +273,7 @@ export interface HTTPRequestContext {
   method: string;
   paymentHeader?: string;
   routePattern?: string;
-  // The framework's own decoded routing view of the path (e.g. Express
-  // `req.path` after URI decoding, or Hono `c.req.path`), if distinct from `path`.
+  // Framework-decoded routing view, if distinct from `path`.
   decodedPath?: string;
 }
 
@@ -1235,12 +1234,9 @@ export class x402HTTPResourceServer {
   /**
    * Get route configuration for a request
    *
-   * Checks the escaped `path` first, then the framework's `decodedPath`
-   * (if distinct), so a route can't be bypassed via either representation.
-   *
    * @param path - Request path
    * @param method - HTTP method
-   * @param decodedPath - Framework decoded routing view of the path, if distinct from path
+   * @param decodedPath - Framework decoded routing view, if distinct from path
    * @returns Route configuration and pattern, or undefined if no match
    */
   private getRouteConfig(
@@ -1439,9 +1435,7 @@ export class x402HTTPResourceServer {
   }
 
   /**
-   * Normalize an already framework-decoded path. Does not decode
-   * percent-escapes, unlike `normalizePath`, since this input was
-   * already decoded once by the router.
+   * Normalize a framework-decoded path without re-decoding percent-escapes.
    *
    * @param path - Framework-decoded path
    * @returns Normalized path

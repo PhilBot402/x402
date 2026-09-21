@@ -55,31 +55,17 @@ export function createInternalErrorResponse(error: unknown): NextResponse {
 }
 
 /**
- * Decode a request path into the view Next.js uses for literal segments
- * (`%2F` becomes `/`), with any `basePath` prefix stripped so mounted apps
- * stay protected.
+ * Decode percent-escapes in a request path.
  *
- * @param request - The Next.js request object
- * @returns Decoded path, or the original pathname if decoding fails
+ * @param path - Request path
+ * @returns Decoded path, or the original if decoding fails
  */
-function decodedRoutePath(request: NextRequest): string {
-  let path = request.nextUrl.pathname;
+function decodedRoutePath(path: string): string {
   try {
-    path = decodeURIComponent(path);
+    return decodeURIComponent(path);
   } catch {
-    path = request.nextUrl.pathname;
-  }
-  const rootPath = request.nextUrl.basePath;
-  if (!rootPath || !path.startsWith(rootPath)) {
     return path;
   }
-  if (path === rootPath) {
-    return "";
-  }
-  if (path[rootPath.length] === "/") {
-    return path.slice(rootPath.length);
-  }
-  return path;
 }
 
 /**
@@ -165,13 +151,11 @@ export function createHttpServer(
 export function createRequestContext(request: NextRequest): HTTPRequestContext {
   // Create adapter and context
   const adapter = new NextAdapter(request);
-  // Next matches wildcard/param routes on the escaped path but literal
-  // routes on the decoded path, so match both.
   const path = request.nextUrl.pathname;
   return {
     adapter,
     path,
-    decodedPath: decodedRoutePath(request),
+    decodedPath: decodedRoutePath(path),
     method: request.method,
     paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment"),
   };

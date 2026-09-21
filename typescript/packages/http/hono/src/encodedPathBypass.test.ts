@@ -94,10 +94,9 @@ describe("hono end-to-end: encoded path separator in a :param segment", () => {
 
 describe("hono end-to-end: literal route percent-encoded separator", () => {
   /**
-   * A literal route must stay gated when a request encodes its path
-   * separator, even though Hono's getPath uses decodeURI (keeping `%2F`).
+   * Literal paid `/api/premium` app.
    *
-   * @returns A Hono app with a paid `/api/premium` handler
+   * @returns Hono app with payment middleware
    */
   async function buildLiteralApp() {
     const app = new Hono();
@@ -166,10 +165,9 @@ describe("hono end-to-end: literal route percent-encoded separator", () => {
 
 describe("hono end-to-end: literal route basePath", () => {
   /**
-   * A literal route must stay gated when the app is mounted under a basePath,
-   * which Hono strips before matching, like Starlette's root_path.
+   * Paid `/api/premium` app mounted at `/svc`.
    *
-   * @returns A Hono app mounted at `/svc` with a paid `/api/premium` handler
+   * @returns Hono app with payment middleware
    */
   async function buildMountedApp() {
     const app = new Hono().basePath("/svc");

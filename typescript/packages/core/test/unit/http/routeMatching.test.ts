@@ -6,10 +6,6 @@ import {
 } from "../../../src/http/x402HTTPResourceServer";
 import { x402ResourceServer } from "../../../src/server/x402ResourceServer";
 
-/**
- * Minimal adapter for route-matching tests. The adapter is only consulted when
- * `method` is empty, so a stub is sufficient.
- */
 class StubAdapter implements HTTPAdapter {
   getHeader(): string | undefined {
     return undefined;
@@ -35,14 +31,6 @@ type DecodedPathNormalizer = {
   normalizeDecodedPath: (path: string) => string;
 };
 
-/**
- * Build a request context that carries an explicit path and method.
- *
- * @param path - Escaped request path
- * @param method - HTTP method
- * @param decodedPath - Framework decoded routing view, if any
- * @returns HTTP request context for route-matching tests
- */
 function context(path: string, method: string = "GET", decodedPath?: string): HTTPRequestContext {
   return {
     adapter: new StubAdapter(),
@@ -88,12 +76,10 @@ describe("decoded path divergence bypass", () => {
   );
 
   it("literal route misses without decoded path", () => {
-    // Pre-fix behavior: only the escaped path is checked.
     expect(server().requiresPayment(context("/api%2Fpremium", "GET", undefined))).toBe(false);
   });
 
   it("real extra segment still not matched", () => {
-    // Guard against over-matching a genuinely different resource.
     const httpServer = server("GET /api/users/:id");
     expect(httpServer.requiresPayment(context("/api/users/x/y", "GET", "/api/users/x/y"))).toBe(
       false,

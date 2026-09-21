@@ -218,6 +218,14 @@ describe("createRequestContext", () => {
     expect(context.decodedPath).toBe("/api/premium");
   });
 
+  it("keeps decodedPath unchanged when percent-encoding is malformed", () => {
+    const req = createMockRequest({ url: "https://example.com/%E0%A4%A" });
+
+    const context = createRequestContext(req);
+
+    expect(context.decodedPath).toBe(context.path);
+  });
+
   it("extracts x-payment header", () => {
     const req = createMockRequest({ headers: { "X-Payment": "payment-data" } });
 
