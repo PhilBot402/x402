@@ -176,7 +176,8 @@ jobs:
           # shellcheck disable=SC1091
           source .env
           set +a
-          # Only forward a custom RPC; empty SVM_TESTNET_RPC_URL falls back to devnet in swig-setup.
+          # Forward a custom RPC when the secret is set. An empty secret falls back
+          # to public devnet inside swig-setup, which retries HTTP 429.
           if [[ -n "${SVM_TESTNET_RPC_URL:-}" ]]; then
             export SVM_RPC_URL="$SVM_TESTNET_RPC_URL"
           fi

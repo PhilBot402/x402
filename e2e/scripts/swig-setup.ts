@@ -10,7 +10,8 @@
  *
  * Environment variables:
  *   CLIENT_SVM_PRIVATE_KEY - Swig authority (required)
- *   SVM_RPC_URL            - Solana RPC (optional, defaults to devnet)
+ *   SVM_RPC_URL            - Solana RPC (optional; wins over SVM_TESTNET_RPC_URL)
+ *   SVM_TESTNET_RPC_URL    - Catalog RPC override when SVM_RPC_URL is unset
  *   SWIG_ACCOUNT_ADDRESS   - Reuse existing Swig account (optional)
  *   SWIG_ID_BASE58         - Fixed Swig id when creating (optional)
  *   SVM_USDC_MINT          - Token mint to fund (optional, devnet USDC default)
@@ -39,7 +40,6 @@ import {
   addSignersToTransactionMessage,
   appendTransactionMessageInstructions,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -60,30 +60,27 @@ import {
   getSwigWalletAddress,
 } from "@swig-wallet/kit";
 import { Actions, createEd25519AuthorityInfo } from "@swig-wallet/lib";
+import {
+  createRateLimitedSolanaRpc,
+  isRetryableRpcRateLimit,
+  resolveSwigRpcUrl,
+  signaturePollDelayMs,
+} from "./svm-rpc-retry";
 
 config();
 
-const DEVNET_RPC_URL = "https://api.devnet.solana.com";
 const USDC_DEVNET_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const MIN_AUTHORITY_SOL = 5_000_000n;
 /** Standard e2e exact endpoint price: $0.001 USDC (6 decimals). */
 const E2E_EXACT_PAYMENT_BASE_UNITS = 1_000n;
 const SWIG_FUND_MULTIPLIER = 10n;
 
-function resolveRpcUrl(rpcUrl?: string): string {
-  const trimmed = rpcUrl?.trim();
-  return trimmed || DEVNET_RPC_URL;
-}
-
-function createRpc(rpcUrl?: string): Rpc<SolanaRpcApi> {
-  return createSolanaRpc(resolveRpcUrl(rpcUrl));
-}
-
-/** Poll signature status over HTTP RPC (same approach as @x402/svm facilitator signer). */
-async function confirmTransaction(rpc: Rpc<SolanaRpcApi>, signature: string): Promise<void> {
-  const initialDelayMs = 250;
-  const initialWindowMs = 2_000;
-  const fallbackDelayMs = 1_000;
+/** Poll signature status over HTTP RPC. Poll interval depends on the RPC host. */
+async function confirmTransaction(
+  rpc: Rpc<SolanaRpcApi>,
+  rpcUrl: string,
+  signature: string,
+): Promise<void> {
   const maxWaitMs = 30_000;
   const startedAt = Date.now();
 
@@ -98,8 +95,7 @@ async function confirmTransaction(rpc: Rpc<SolanaRpcApi>, signature: string): Pr
       return;
     }
 
-    const elapsed = Date.now() - startedAt;
-    const delay = elapsed < initialWindowMs ? initialDelayMs : fallbackDelayMs;
+    const delay = signaturePollDelayMs(rpcUrl, Date.now() - startedAt);
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
@@ -108,6 +104,7 @@ async function confirmTransaction(rpc: Rpc<SolanaRpcApi>, signature: string): Pr
 
 async function sendInstructions(
   rpc: Rpc<SolanaRpcApi>,
+  rpcUrl: string,
   payer: KeyPairSigner,
   instructions: Instruction[],
   signers: KeyPairSigner[] = [],
@@ -133,7 +130,7 @@ async function sendInstructions(
     .send();
 
   const signature = getSignatureFromTransaction(signedTx);
-  await confirmTransaction(rpc, signature);
+  await confirmTransaction(rpc, rpcUrl, signature);
   return signature;
 }
 
@@ -209,6 +206,7 @@ function printSwigEnvSummary(resolved: ResolvedSwigAccount): void {
 
 async function resolveSwigAccountAddress(
   rpc: Rpc<SolanaRpcApi>,
+  rpcUrl: string,
   authority: KeyPairSigner,
 ): Promise<ResolvedSwigAccount> {
   const fromEnv = process.env.SWIG_ACCOUNT_ADDRESS;
@@ -234,7 +232,7 @@ async function resolveSwigAccountAddress(
   });
 
   console.log(`🔄 Creating Swig account ${swigAccountAddress}...`);
-  const sig = await sendInstructions(rpc, authority, [createSwigIx as Instruction]);
+  const sig = await sendInstructions(rpc, rpcUrl, authority, [createSwigIx as Instruction]);
   console.log(`   ✅ Swig create tx: ${sig}`);
 
   return {
@@ -246,6 +244,7 @@ async function resolveSwigAccountAddress(
 
 async function ensureSwigFunded(
   rpc: Rpc<SolanaRpcApi>,
+  rpcUrl: string,
   authority: KeyPairSigner,
   swigAccountAddress: Address,
   mint: Address,
@@ -283,16 +282,22 @@ async function ensureSwigFunded(
 
   try {
     await rpc.getTokenAccountBalance(authorityAta).send();
-  } catch {
+  } catch (error) {
+    if (isRetryableRpcRateLimit(error)) {
+      throw error;
+    }
     console.log("🔄 Creating authority USDC ATA...");
-    await sendInstructions(rpc, authority, [createAuthorityAtaIx]);
+    await sendInstructions(rpc, rpcUrl, authority, [createAuthorityAtaIx]);
   }
 
   try {
     await rpc.getTokenAccountBalance(swigAta).send();
-  } catch {
+  } catch (error) {
+    if (isRetryableRpcRateLimit(error)) {
+      throw error;
+    }
     console.log("🔄 Creating Swig wallet USDC ATA...");
-    await sendInstructions(rpc, authority, [createSwigAtaIx]);
+    await sendInstructions(rpc, rpcUrl, authority, [createSwigAtaIx]);
   }
 
   const swigBalance = await rpc.getTokenAccountBalance(swigAta).send();
@@ -327,7 +332,7 @@ async function ensureSwigFunded(
     },
     { programAddress: tokenProgram },
   );
-  const sig = await sendInstructions(rpc, authority, [fundIx]);
+  const sig = await sendInstructions(rpc, rpcUrl, authority, [fundIx]);
   console.log(`   ✅ Fund tx: ${sig}`);
 }
 
@@ -338,17 +343,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const rpcUrl = resolveRpcUrl(process.env.SVM_RPC_URL);
+  const rpcUrl = resolveSwigRpcUrl({
+    svmRpcUrl: process.env.SVM_RPC_URL,
+    svmTestnetRpcUrl: process.env.SVM_TESTNET_RPC_URL,
+  });
   const mint = (process.env.SVM_USDC_MINT ?? USDC_DEVNET_MINT) as Address;
-  const rpc = createRpc(rpcUrl);
+  const rpc = createRateLimitedSolanaRpc(rpcUrl);
   const authority = await createKeyPairSignerFromBytes(base58.decode(privateKey));
 
   console.log(`\n🔑 Authority: ${authority.address}`);
   console.log(`📍 RPC: ${rpcUrl}`);
   console.log(`💰 Mint: ${mint}\n`);
 
-  const resolved = await resolveSwigAccountAddress(rpc, authority);
-  await ensureSwigFunded(rpc, authority, resolved.address, mint);
+  const resolved = await resolveSwigAccountAddress(rpc, rpcUrl, authority);
+  await ensureSwigFunded(rpc, rpcUrl, authority, resolved.address, mint);
 
   persistSwigEnv(join(process.cwd(), ".env"), resolved);
   printSwigEnvSummary(resolved);
