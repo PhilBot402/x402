@@ -988,9 +988,6 @@ function resolvePrice(
  * Resolve every route an SDK implements against a server process environment.
  * Routes whose network has no configured payee address are dropped, so a server
  * only advertises what it can actually settle.
- *
- * `masumiEscrowAddress` is the `@x402/cardano` helper. Callers pass it in so
- * this catalog module can load before that package is built.
  */
 export function resolvePaymentRoutes(
   sdk: string,
