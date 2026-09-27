@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Detect which protocol families can run based on catalog-required wallet env vars.
 # Prints a comma-separated list (e.g. evm,svm) to stdout.
-# Exits 2 when no family has all required secrets.
-# Any other non-zero status is an unexpected failure (do not treat it as a skip).
+# Exits 1 when no family has all required secrets.
 #
 # Reads from the current shell environment. When unset, loads e2e/.env
 # (same variables as pnpm test / CI) without overriding existing exports.

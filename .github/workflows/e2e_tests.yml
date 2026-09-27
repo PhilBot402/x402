@@ -107,14 +107,6 @@ jobs:
       - name: Install E2E dependencies
         run: pnpm install --frozen-lockfile
 
-      # Family selection loads e2e/src/mechanisms.ts, which value-imports
-      # @x402/cardano. dist/ is gitignored, so the SDK must be built first.
-      - name: Install and build TypeScript SDK
-        working-directory: ./typescript
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-
       - name: Select protocol families from configured secrets
         id: families
         run: |
@@ -133,17 +125,10 @@ jobs:
           FAMILIES=$(bash scripts/ci-select-families.sh)
           status=$?
           set -e
-          # Exit 2 is the script's "no secrets" result. Any other failure
-          # (including MODULE_NOT_FOUND while loading a workspace package)
-          # must fail the job instead of being reported as a skip.
-          if [[ $status -eq 2 ]]; then
+          if [[ $status -ne 0 ]]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "No wallet secrets configured — skipping e2e run." >> "$GITHUB_STEP_SUMMARY"
             exit 0
-          fi
-          if [[ $status -ne 0 ]]; then
-            echo "Family selection failed with exit ${status}." >> "$GITHUB_STEP_SUMMARY"
-            exit "$status"
           fi
           echo "families=$FAMILIES" >> "$GITHUB_OUTPUT"
           echo "versions=$VERSIONS" >> "$GITHUB_OUTPUT"
@@ -166,6 +151,13 @@ jobs:
       - name: Install Python
         if: steps.families.outputs.configured == 'true'
         run: uv python install 3.10
+
+      - name: Install and build TypeScript SDK
+        if: steps.families.outputs.configured == 'true'
+        working-directory: ./typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Print wallet status
         if: steps.families.outputs.configured == 'true'

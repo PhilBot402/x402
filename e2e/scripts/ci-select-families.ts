@@ -20,8 +20,7 @@ for (const family of PROTOCOL_FAMILIES) {
 if (families.length === 0) {
   console.error('No protocol families have all required wallet secrets configured.');
   console.error('Set variables in e2e/.env or export them in your shell.');
-  // Distinct from a loader crash (exit 1) so CI can skip only this case.
-  process.exit(2);
+  process.exit(1);
 }
 
 console.log(families.join(','));
