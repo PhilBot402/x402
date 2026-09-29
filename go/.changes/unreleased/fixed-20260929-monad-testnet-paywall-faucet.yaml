@@ -1,0 +1,3 @@
+kind: fixed
+body: Add Monad testnet (eip155:10143) Circle faucet URL to the embedded EVM paywall so browser paywalls show the faucet link instead of "No faucet configured."
+time: 2026-09-29T07:00:00Z

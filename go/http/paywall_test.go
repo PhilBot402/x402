@@ -349,3 +349,10 @@ func TestInjectPaywallConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestEVMPaywallTemplate_MonadTestnetFaucetURL(t *testing.T) {
+	const want = `"eip155:10143":"https://faucet.circle.com/"`
+	if !strings.Contains(EVMPaywallTemplate, want) {
+		t.Errorf("embedded EVM paywall $xt map missing Monad Testnet Circle faucet %s", want)
+	}
+}
