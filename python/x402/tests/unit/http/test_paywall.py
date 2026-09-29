@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from x402.http.paywall import (
     EvmPaywallHandler,
     PaywallBuilder,
     SvmPaywallHandler,
 )
+from x402.http.paywall.evm_paywall_template import EVM_PAYWALL_TEMPLATE
 from x402.schemas import (
     PaymentRequired,
     PaymentRequirements,
     ResourceInfo,
 )
+
+_EMBEDDED_FAUCET_MAP_RE = re.compile(r"\$xt=(\{.*?\})")
+
+
+def _embedded_faucet_map(template: str) -> dict[str, str]:
+    match = _EMBEDDED_FAUCET_MAP_RE.search(template)
+    assert match is not None, "embedded paywall $xt faucet map not found"
+    parsed = json.loads(match.group(1))
+    assert isinstance(parsed, dict)
+    return parsed
 
 
 def _make_evm_payment_required() -> PaymentRequired:
@@ -139,3 +153,8 @@ def test_provider_runtime_faucet_urls_override_builder_faucet_urls() -> None:
     )
     assert "https://example.com/runtime" in html
     assert "https://example.com/builder" not in html
+
+
+def test_evm_embedded_faucet_map_includes_monad_testnet_circle_faucet() -> None:
+    faucet_map = _embedded_faucet_map(EVM_PAYWALL_TEMPLATE)
+    assert faucet_map["eip155:10143"] == "https://faucet.circle.com/"
