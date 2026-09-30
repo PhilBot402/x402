@@ -85,23 +85,38 @@ export interface TfExecuteResult {
   /** True when the settle tx provably moved funds (archived Amulet with no
    *  pending TransferInstruction, or the CIP-56 Completed result). */
   transferred: boolean;
-  /** True when the funds-moved read was inconclusive and `transferred` fell back
-   *  to the committed-execute signal. */
+  /** True when the funds-moved read could not be completed. `transferred` is
+   *  then false: an unreadable transaction is not proof that funds moved. */
   confirmInconclusive: boolean;
 }
 
 const DEFAULT_CONFIRM_RETRY = { attempts: 4, delayMs: 500 };
 
+/** Identifiers for a submission whose outcome could not be read, so a single
+ *  follow-up settle can re-read it without relaying again. */
+export interface UnknownSubmissionContext {
+  /** Committed update id, when `/execute` or the completion stream returned one. */
+  updateId?: string;
+  /** Submission id sent with `/execute`. Stable for this relay only. */
+  submissionId?: string;
+  /** Completion-stream offset captured before `/execute`. */
+  beginExclusive?: number;
+}
+
 /** The submission was accepted by the participant but its outcome could not be
  *  read — it may be committing right now. Distinct from a definite refusal so
- *  /settle never reports an unknown outcome as a rejection. */
+ *  /settle never reports an unknown outcome as a retryable rejection. */
 export class SubmissionOutcomeUnknownError extends Error {
   /**
    * Construct a submission-outcome-unknown error.
    *
    * @param cause - The underlying read failure.
+   * @param context - Submission identifiers for one confirmation retry.
    */
-  constructor(readonly cause: unknown) {
+  constructor(
+    readonly cause: unknown,
+    readonly context: UnknownSubmissionContext = {},
+  ) {
     super(
       `interactive submission accepted but its outcome could not be read: ${
         cause instanceof Error ? cause.message : String(cause)
@@ -155,7 +170,10 @@ export class TransferFactoryService {
       // timeout, a dropped connection, an unreadable body or a 5xx may have
       // reached the ledger — that outcome is unknown, never a rejection.
       if (isDefiniteExecuteRefusal(err)) throw err;
-      throw new SubmissionOutcomeUnknownError(err);
+      throw new SubmissionOutcomeUnknownError(err, {
+        submissionId: input.submissionId,
+        beginExclusive: offset0,
+      });
     }
     // /execute is async: it normally answers `{}` with the updateId on the
     // completion stream. Everything below reads the outcome of a submission
@@ -173,7 +191,10 @@ export class TransferFactoryService {
         // A completion carrying a non-zero status is a real refusal — nothing
         // moved. Any other read failure is an unknown outcome, never a rejection.
         if ((err as { code?: unknown } | null)?.code === "SUBMISSION_FAILED") throw err;
-        throw new SubmissionOutcomeUnknownError(err);
+        throw new SubmissionOutcomeUnknownError(err, {
+          submissionId: input.submissionId,
+          beginExclusive: offset0,
+        });
       }
     }
     return this.confirmTransferred(input.payer, updateId, input.transferKind);
@@ -181,8 +202,8 @@ export class TransferFactoryService {
 
   /**
    * Did the funds actually move under this updateId? Reads the payer's
-   * projection; an unreadable read is inconclusive (trust the commit), never
-   * "did not happen".
+   * projection. An unreadable read is inconclusive (`transferred: false`),
+   * never proof that funds moved and never a definite "did not happen".
    *
    * @param payer - The payer party whose projection to read.
    * @param updateId - The committed update to confirm.
@@ -229,27 +250,26 @@ export class TransferFactoryService {
       }
       if (sawAnyEvent) {
         // Amulet emits an archived `Splice.Amulet:Amulet` as the consumed input
-        // (the positive "funds moved" signal). A registry token archives its own
-        // (unknown-to-us) Holding, so for a registry instrument the signal is the
-        // standard's Completed result tag, falling back to "committed + not
-        // pending" when the tag cannot be read. For Amulet, a created pending
-        // instruction means the input was only locked, not delivered.
+        // (the positive "funds moved" signal). A registry token's signal is the
+        // standard's Completed result tag; an unreadable tag is inconclusive,
+        // not a delivery. A created pending instruction means the input was
+        // only locked, not delivered.
         const completedByResult = transferCompletedFromResult(events);
-        return {
-          updateId,
-          transferred: isRegistry
-            ? (completedByResult ?? !sawPendingInstruction)
-            : sawArchivedAmulet && !sawPendingInstruction,
-          confirmInconclusive: false,
-        };
+        if (isRegistry && completedByResult === undefined) {
+          return { updateId, transferred: false, confirmInconclusive: true };
+        }
+        const transferred = isRegistry
+          ? completedByResult === true && !sawPendingInstruction
+          : sawArchivedAmulet && !sawPendingInstruction;
+        return { updateId, transferred, confirmInconclusive: false };
       }
       if (i < cfg.attempts - 1) {
         await new Promise(res => setTimeout(res, cfg.delayMs));
       }
     }
     // Inconclusive read after retries: the execute committed (we have an
-    // updateId) and the preapproval gate already excluded the Pending case. Trust
-    // the committed signal; flag it.
-    return { updateId, transferred: true, confirmInconclusive: true };
+    // updateId) but this read did not prove funds moved. Callers must not
+    // report success from that alone.
+    return { updateId, transferred: false, confirmInconclusive: true };
   }
 }

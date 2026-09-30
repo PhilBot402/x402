@@ -23,12 +23,25 @@ export interface PreapprovalView {
 
 /** Result of relaying the payer-signed transaction (ExecuteSubmission). */
 export interface ExecuteResult {
-  /** Canton updateId of the committed transaction. */
+  /** Canton updateId of the committed transaction. Empty when it is not known. */
   updateId: string;
-  /** Whether funds actually moved to the merchant (committed-zero-funds → false). */
+  /** True only when this read proved funds moved to the merchant. */
   transferred: boolean;
-  /** True when the funds-moved read could not be confirmed either way. */
+  /** True when the funds-moved read could not be completed. `transferred` is
+   *  then false. */
   confirmInconclusive?: boolean;
+}
+
+/** Re-read of a relay this facilitator already submitted. Does not submit. */
+export interface ConfirmSubmissionArgs {
+  payer: string;
+  transferKind: "amulet" | "registry";
+  /** Committed update id, when the first settle already learned it. */
+  updateId?: string;
+  /** Submission id from the first relay, used when the update id is not known. */
+  submissionId?: string;
+  /** Completion-stream offset from before that relay. */
+  beginExclusive?: number;
 }
 
 /**
@@ -126,6 +139,12 @@ export interface FacilitatorCantonSigner {
     inputHoldingCids: string[];
     refresh?: boolean;
   }): Promise<string>;
+  /**
+   * Re-read a relay this process already submitted. Settle calls this once,
+   * on the `settlement_pending` retry, and only to confirm funds moved.
+   * Implementations must not submit again.
+   */
+  confirmSubmission?(args: ConfirmSubmissionArgs): Promise<ExecuteResult>;
   /** Relay the payer-signed transaction (ExecuteSubmission). Settle only. */
   executeSubmission(args: {
     preparedTransactionBytes: Buffer;

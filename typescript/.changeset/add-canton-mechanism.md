@@ -13,4 +13,7 @@ built on a bundled JSON Ledger API + Scan client and the official
 `@canton-network/core-tx-visualizer` hashing; an integrator may also inject their
 own `ClientCantonSigner` / `FacilitatorCantonSigner`. Canton Coin and CIP-56
 registry tokens (e.g. USDCx) share the exact wire shape and differ only by
-`extra.instrumentId.admin`.
+`extra.instrumentId.admin`. Settle returns success only after the relayed
+transaction is confirmed and funds moved. A timeout or unreadable confirmation
+returns non-terminal `settlement_pending`; the resource server retries settle
+once, which either confirms or fails terminally. There is no further retry.

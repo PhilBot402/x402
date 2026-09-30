@@ -374,6 +374,35 @@ export function toFacilitatorCantonSigner(
       }
     },
 
+    async confirmSubmission(args): Promise<ExecuteResult> {
+      let updateId = args.updateId ?? "";
+      if (!updateId && args.submissionId !== undefined && args.beginExclusive !== undefined) {
+        try {
+          updateId = await client.pollCompletionUpdateId(
+            config.userId,
+            args.payer,
+            args.submissionId,
+            args.beginExclusive,
+          );
+        } catch (err) {
+          const code = (err as { code?: unknown } | null)?.code;
+          if (code === "SUBMISSION_FAILED") {
+            return { updateId: "", transferred: false, confirmInconclusive: false };
+          }
+          return { updateId: "", transferred: false, confirmInconclusive: true };
+        }
+      }
+      if (!updateId) {
+        return { updateId: "", transferred: false, confirmInconclusive: true };
+      }
+      const result = await tfSvc.confirmTransferred(args.payer, updateId, args.transferKind);
+      return {
+        updateId: result.updateId,
+        transferred: result.transferred,
+        confirmInconclusive: result.confirmInconclusive,
+      };
+    },
+
     async executeSubmission(args): Promise<ExecuteResult> {
       // `signedBy` is the payer's own namespace fingerprint (the part after
       // `::`), which for a single-key external party IS its signing key's

@@ -303,9 +303,11 @@ already-spent holdings, which the ledger rejects. The replay guard is therefore
 native and on-ledger — no off-chain deduplication store is required.
 
 A facilitator MUST **relay** the signed transfer to settle. It MUST NOT treat a
-previously observed `updateId` as settlement: a read of a completed update is
-replayable and moves no funds, whereas relaying the signed transfer is
-single-use by construction.
+previously observed `updateId` as settlement of a new payment: a read of a
+completed update is replayable and moves no funds, whereas relaying the signed
+transfer is single-use by construction. The single `settlement_pending` retry
+is not such a payment: it re-reads the relay this facilitator just submitted
+and succeeds only when that read proves funds moved.
 
 ## Concurrency & Retry
 
@@ -337,7 +339,24 @@ After verification succeeds:
    created (a pending resolution would create one — which the preapproval gate in
    Rule 7 already excludes).
 
-4. Return `SettlementResponse` with the ledger `updateId`.
+4. Return `SettlementResponse` with the ledger `updateId`. `success` is true
+   only when step 3 proved funds moved. A committed update whose events could
+   not be read is not success.
+
+5. **Unreadable confirmation.** If the relay was accepted but a timeout,
+   transport error, 5xx, or an unreadable funds-moved read means confirmation
+   is not yet known, the facilitator MAY return the non-terminal
+   `settlement_pending` (see [x402 v2 §9](../../x402-specification-v2.md#9-error-handling))
+   with a non-empty `transaction` (the `updateId`, or the submission id when
+   the update id is not known yet). The resource server retries `settle` once
+   with the same payload. That retry MUST NOT relay again. It re-reads the
+   same submission and returns `success: true` only if funds moved. Otherwise
+   it returns a terminal failure: `invalid_exact_canton_execute_failed` when
+   the read shows the transfer did not deliver, or
+   `unexpected_canton_ledger_error` when the read is still unreadable. There
+   is no further retry and no off-chain idempotency store. A later settle of
+   the same payload is a new relay; once the input holdings are spent the
+   ledger rejects it.
 
 ## Error Reason Codes
 
@@ -354,7 +373,8 @@ After verification succeeds:
 | `invalid_exact_canton_expired` | `executeBefore` is past or within the safety margin. |
 | `invalid_exact_canton_self_payment` | Proven sender equals the facilitator / `feePayer` party. |
 | `invalid_exact_canton_execute_failed` | The relayed transfer was rejected on execution — e.g. an input holding was already spent (concurrent settlement) or funds were insufficient. Transient input contention SHOULD be retried. |
-| `unexpected_canton_ledger_error` | Participant read failure, ledger rejection, or timeout not covered above. |
+| `unexpected_canton_ledger_error` | Participant read failure, ledger rejection, or timeout not covered above. Terminal, including a `settlement_pending` retry that still cannot read confirmation. |
+| `settlement_pending` | The relay was accepted but confirmation could not be read (timeout, transport error, 5xx, or an empty funds-moved read). Non-terminal. `transaction` MUST be non-empty. The caller retries `settle` once; that retry does not relay again. |
 
 ## References
 

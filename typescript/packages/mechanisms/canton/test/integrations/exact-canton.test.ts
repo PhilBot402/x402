@@ -156,11 +156,10 @@ describe("exact/canton integration (CC, stubbed signers)", () => {
     expect(kinds).toEqual(["amulet"]);
   });
 
-  // Fund-safety: an execute that COMMITTED but whose outcome could not be read is
-  // not a rejection. Reporting it as the retryable execute-failed reason would
-  // invite the payer to pay again, so settle must surface the non-retryable
-  // ledger-read error instead.
-  it("settle maps an unknown execute outcome to the non-retryable ledger error", async () => {
+  // An unknown execute outcome with no submission id cannot be retried as
+  // settlement_pending (core requires a non-empty transaction). It stays a
+  // terminal ledger error, not the retryable execute-failed reason.
+  it("settle maps an unknown execute outcome with no id to the terminal ledger error", async () => {
     const { reqs, payload } = await buildFlow();
     const signer: FacilitatorCantonSigner = {
       ...facilitatorSigner([]),

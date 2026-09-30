@@ -79,6 +79,18 @@ describe("execute failure classification", () => {
       expect(isDefiniteExecuteRefusal(err)).toBe(want === "refused");
     });
   }
+
+  it("a timeout keeps the submission id for one confirmation retry", async () => {
+    const svc = service({
+      interactiveSubmissionExecute: async () => {
+        throw new CantonError("aborted", "TIMEOUT");
+      },
+    });
+    await expect(svc.execute(execInput())).rejects.toMatchObject({
+      name: "SubmissionOutcomeUnknownError",
+      context: { submissionId: "s", beginExclusive: 1 },
+    });
+  });
 });
 
 describe("funds-moved confirmation", () => {
@@ -87,6 +99,15 @@ describe("funds-moved confirmation", () => {
   };
   const created = (templateId: string) => ({
     CreatedEvent: { contractId: "c2", templateId } as never,
+  });
+
+  it("no events after commit is inconclusive, not a transfer", async () => {
+    const r = await service({}).execute(execInput());
+    expect(r).toEqual({
+      updateId: "1220-u",
+      transferred: false,
+      confirmInconclusive: true,
+    });
   });
 
   it("Amulet: archived input and nothing pending → transferred", async () => {
@@ -135,6 +156,30 @@ describe("funds-moved confirmation", () => {
     expect((await run("TransferInstructionResult_Completed")).transferred).toBe(true);
     expect((await run("TransferInstructionResult_Pending")).transferred).toBe(false);
     expect(asked).toEqual([true, true]);
+  });
+
+  it("registry: an unreadable result tag is inconclusive", async () => {
+    const r = await service(
+      {
+        getTransactionById: async () => ({
+          updateId: "1220-u",
+          offset: 2,
+          events: [
+            {
+              ExercisedEvent: {
+                contractId: "f",
+                templateId: "t",
+                choice: "TransferFactory_Transfer",
+                exerciseResult: {},
+              },
+            },
+          ],
+        }),
+      },
+      [],
+    ).execute(execInput("registry"));
+    expect(r.transferred).toBe(false);
+    expect(r.confirmInconclusive).toBe(true);
   });
 });
 
