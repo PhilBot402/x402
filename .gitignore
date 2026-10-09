@@ -43,6 +43,12 @@ examples/go/clients/builder-codes/builder-codes
 # Generated setup-script output (smart-account addresses per run)
 typescript/packages/mechanisms/evm/scripts/setup-smart-accounts.log
 
+# Copied beside a package only while npm pack / pnpm pack runs.
+# The tracked @x402/evm NOTICE is unaffected.
+typescript/packages/**/LICENSE
+typescript/packages/**/NOTICE
+typescript/packages/**/.notice-pack-backup
+
 # Agent artifacts
 TASK.md
 .claude/
