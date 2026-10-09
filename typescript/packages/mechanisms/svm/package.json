@@ -18,9 +18,7 @@
     "payment-channels:pull-idl": "pnpm --dir ../../../../scripts/payment-channels-codegen pull-idl",
     "payment-channels:generate": "pnpm --dir ../../../../scripts/payment-channels-codegen generate",
     "payment-channels:sync": "pnpm payment-channels:pull-idl && pnpm payment-channels:generate",
-    "payment-channels:check": "pnpm payment-channels:generate && git diff --exit-code -- src/payment-channels/generated",
-    "prepack": "node ../../../scripts/copy-license-files.mjs prepare",
-    "postpack": "node ../../../scripts/copy-license-files.mjs restore"
+    "payment-channels:check": "pnpm payment-channels:generate && git diff --exit-code -- src/payment-channels/generated"
   },
   "keywords": [
     "x402",
