@@ -13,9 +13,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "format": "prettier -c .prettierrc --write \"**/*.{ts,js,cjs,json,md}\"",
-    "lint": "eslint . --ext .ts --fix",
-    "prepack": "node ../../../scripts/copy-license-files.mjs prepare",
-    "postpack": "node ../../../scripts/copy-license-files.mjs restore"
+    "lint": "eslint . --ext .ts --fix"
   },
   "dependencies": {
     "@ton/core": "^0.63.1",
