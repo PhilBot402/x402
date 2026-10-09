@@ -15,7 +15,9 @@
     "format": "prettier -c .prettierrc --write \"**/*.{ts,js,cjs,json,md}\"",
     "format:check": "prettier -c .prettierrc --check \"**/*.{ts,js,cjs,json,md}\"",
     "lint": "eslint . --ext .ts --fix",
-    "lint:check": "eslint . --ext .ts"
+    "lint:check": "eslint . --ext .ts",
+    "prepack": "node ../../../scripts/copy-license-files.mjs prepare",
+    "postpack": "node ../../../scripts/copy-license-files.mjs restore"
   },
   "keywords": [
     "x402",
@@ -127,6 +129,7 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ]
 }
