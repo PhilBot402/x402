@@ -2,7 +2,11 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 )
+
+var networkV2Pattern = regexp.MustCompile(`^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$`)
 
 // PaymentPayload represents a v2 payment payload structure
 // V2 has accepted field with nested scheme/network/requirements
@@ -39,6 +43,20 @@ func (r PaymentRequirements) GetAmount() string                { return r.Amount
 func (r PaymentRequirements) GetPayTo() string                 { return r.PayTo }
 func (r PaymentRequirements) GetMaxTimeoutSeconds() int        { return r.MaxTimeoutSeconds }
 func (r PaymentRequirements) GetExtra() map[string]interface{} { return r.Extra }
+
+// UnmarshalJSON rejects a V2 network that is not a CAIP-2 identifier.
+func (r *PaymentRequirements) UnmarshalJSON(data []byte) error {
+	type paymentRequirements PaymentRequirements
+	var decoded paymentRequirements
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if !networkV2Pattern.MatchString(decoded.Network) {
+		return fmt.Errorf("network must be in CAIP-2 format (e.g., 'eip155:84532')")
+	}
+	*r = PaymentRequirements(decoded)
+	return nil
+}
 
 // PaymentRequired represents a v2 402 response structure
 type PaymentRequired struct {
