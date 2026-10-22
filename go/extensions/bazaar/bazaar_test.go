@@ -2090,6 +2090,93 @@ func TestBazaarResourceServerExtension(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, extension.Info, resultExt.Info)
 	})
+
+	// Issue #3511: a route registered without a verb returns 402 for any method,
+	// so the probe method can disagree with the declared input shape.
+	// DeclareDiscoveryExtension requires a method. A probe that fits the input
+	// shape is advertised. A probe that does not fit falls back to POST or GET.
+	t.Run("should not advertise the probe method when it disagrees with the declared input", func(t *testing.T) {
+		stringSchema := map[string]interface{}{"type": "string"}
+		tests := []struct {
+			name     string
+			method   interface{}
+			input    map[string]interface{}
+			bodyType bazaar.BodyType
+			probe    string
+			expected string
+		}{
+			{
+				name:     "body declaration probed with GET",
+				method:   bazaar.MethodPUT,
+				input:    map[string]interface{}{"prompt": "hi"},
+				bodyType: bazaar.BodyTypeJSON,
+				probe:    "GET",
+				expected: "POST",
+			},
+			{
+				name:     "query declaration probed with POST",
+				method:   bazaar.MethodDELETE,
+				input:    map[string]interface{}{"q": "hi"},
+				bodyType: "",
+				probe:    "POST",
+				expected: "GET",
+			},
+			{
+				name:     "body declaration probed with PUT",
+				method:   bazaar.MethodPOST,
+				input:    map[string]interface{}{"prompt": "hi"},
+				bodyType: bazaar.BodyTypeJSON,
+				probe:    "PUT",
+				expected: "PUT",
+			},
+			{
+				name:     "query declaration probed with DELETE",
+				method:   bazaar.MethodGET,
+				input:    map[string]interface{}{"q": "hi"},
+				bodyType: "",
+				probe:    "DELETE",
+				expected: "DELETE",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				properties := map[string]interface{}{}
+				for key := range tt.input {
+					properties[key] = stringSchema
+				}
+				extension, err := bazaar.DeclareDiscoveryExtension(
+					tt.method,
+					tt.input,
+					bazaar.JSONSchema{"properties": properties},
+					tt.bodyType,
+					nil,
+				)
+				require.NoError(t, err)
+
+				enriched := bazaar.BazaarResourceServerExtension.EnrichDeclaration(extension, x402http.HTTPRequestContext{
+					Method:  tt.probe,
+					Path:    "/test",
+					Adapter: &mockHTTPAdapterForBazaar{method: tt.probe, path: "/test"},
+				})
+				enrichedExt, ok := enriched.(bazaar.DiscoveryExtension)
+				require.True(t, ok)
+
+				switch input := enrichedExt.Info.Input.(type) {
+				case bazaar.BodyInput:
+					assert.Equal(t, bazaar.BodyMethods(tt.expected), input.Method)
+				case bazaar.QueryInput:
+					assert.Equal(t, bazaar.QueryParamMethods(tt.expected), input.Method)
+				default:
+					t.Fatalf("unexpected input type %T", enrichedExt.Info.Input)
+				}
+
+				assert.Equal(t, []string{tt.expected}, extractMethodEnum(t, enrichedExt.Schema))
+				assert.Equal(t, bazaar.ValidationResult{Valid: true}, bazaar.ValidateDiscoveryExtensionSpec(enrichedExt))
+				assert.Equal(t, bazaar.ValidationResult{Valid: true}, bazaar.ValidateDiscoveryExtension(enrichedExt))
+			})
+		}
+	})
 }
 
 func declareEmptyGETExtension(t *testing.T) bazaar.DiscoveryExtension {
