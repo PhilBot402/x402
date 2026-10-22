@@ -16,6 +16,46 @@ var bracketParamRegex = regexp.MustCompile(`\[([^\]]+)\]`)
 // colonParamRegex is a package-local alias for the shared regex in extensions/types.
 var colonParamRegex = types.ColonParamRegex
 
+// resolveDeclaredMethod picks the method to advertise for an HTTP declaration.
+// A route registered without a verb returns 402 for any method, so the request
+// method is used only when it fits the declared input shape. Otherwise it falls
+// back to POST or GET, matching startup validation.
+func resolveDeclaredMethod(input interface{}, requestMethod string) string {
+	method := strings.ToUpper(requestMethod)
+	if _, isBody := input.(types.BodyInput); isBody {
+		if types.IsBodyMethod(method) {
+			return method
+		}
+		return string(types.MethodPOST)
+	}
+	if types.IsQueryMethod(method) {
+		return method
+	}
+	return string(types.MethodGET)
+}
+
+// narrowSchemaMethodEnum sets the schema method enum to the advertised method
+// so validation accepts the value written onto info.input.
+func narrowSchemaMethodEnum(schema types.JSONSchema, method string) {
+	properties, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	input, ok := properties["input"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	inputProperties, ok := input["properties"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	methodProp, ok := inputProperties["method"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	methodProp["enum"] = []string{method}
+}
+
 // patternCache caches compiled capture regexes and param names per route pattern
 // to avoid recompilation on every request.
 type patternCacheEntry struct {
@@ -146,14 +186,19 @@ func (e *bazaarResourceServerExtension) EnrichDeclaration(
 		return declaration
 	}
 
-	method := httpContext.Method
-
-	if queryInput, ok := extension.Info.Input.(types.QueryInput); ok {
-		queryInput.Method = types.QueryParamMethods(method)
-		extension.Info.Input = queryInput
-	} else if bodyInput, ok := extension.Info.Input.(types.BodyInput); ok {
-		bodyInput.Method = types.BodyMethods(method)
-		extension.Info.Input = bodyInput
+	var method string
+	switch input := extension.Info.Input.(type) {
+	case types.QueryInput:
+		method = resolveDeclaredMethod(input, httpContext.Method)
+		input.Method = types.QueryParamMethods(method)
+		extension.Info.Input = input
+	case types.BodyInput:
+		method = resolveDeclaredMethod(input, httpContext.Method)
+		input.Method = types.BodyMethods(method)
+		extension.Info.Input = input
+	}
+	if method != "" {
+		narrowSchemaMethodEnum(extension.Schema, method)
 	}
 
 	if inputSchema, ok := extension.Schema["properties"].(map[string]interface{}); ok {
