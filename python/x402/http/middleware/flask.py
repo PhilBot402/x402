@@ -593,7 +593,7 @@ class PaymentMiddleware:
                                 *settle_headers.items(),
                             ],
                         )
-                        return [json.dumps({}).encode("utf-8")]
+                        return [json.dumps({"error": "settlement_failed"}).encode("utf-8")]
 
                 # Send buffered response
                 response_wrapper.send_response(body_chunks)

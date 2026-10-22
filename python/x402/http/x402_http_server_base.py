@@ -969,6 +969,8 @@ class x402HTTPServerBase:
         if unpaid_response:
             content_type = unpaid_response.content_type
             body = unpaid_response.body
+        elif payment_required.error:
+            body = {"error": payment_required.error}
 
         return HTTPResponseInstructions(
             status=402,

@@ -464,7 +464,7 @@ def payment_middleware(
                     settle_response, result.payment_requirements
                 )
                 return JSONResponse(
-                    content={},
+                    content={"error": "settlement_failed"},
                     status_code=402,
                     headers={
                         "Content-Type": "application/json",
