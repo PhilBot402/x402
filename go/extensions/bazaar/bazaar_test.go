@@ -2091,10 +2091,6 @@ func TestBazaarResourceServerExtension(t *testing.T) {
 		assert.Equal(t, extension.Info, resultExt.Info)
 	})
 
-	// Issue #3511: a route registered without a verb returns 402 for any method,
-	// so the probe method can disagree with the declared input shape.
-	// DeclareDiscoveryExtension requires a method. A probe that fits the input
-	// shape is advertised. A probe that does not fit falls back to POST or GET.
 	t.Run("should not advertise the probe method when it disagrees with the declared input", func(t *testing.T) {
 		stringSchema := map[string]interface{}{"type": "string"}
 		tests := []struct {

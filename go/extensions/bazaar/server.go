@@ -16,10 +16,6 @@ var bracketParamRegex = regexp.MustCompile(`\[([^\]]+)\]`)
 // colonParamRegex is a package-local alias for the shared regex in extensions/types.
 var colonParamRegex = types.ColonParamRegex
 
-// resolveDeclaredMethod picks the method to advertise for an HTTP declaration.
-// A route registered without a verb returns 402 for any method, so the request
-// method is used only when it fits the declared input shape. Otherwise it falls
-// back to POST or GET, matching startup validation.
 func resolveDeclaredMethod(input interface{}, requestMethod string) string {
 	method := strings.ToUpper(requestMethod)
 	if _, isBody := input.(types.BodyInput); isBody {
@@ -34,8 +30,6 @@ func resolveDeclaredMethod(input interface{}, requestMethod string) string {
 	return string(types.MethodGET)
 }
 
-// narrowSchemaMethodEnum sets the schema method enum to the advertised method
-// so validation accepts the value written onto info.input.
 func narrowSchemaMethodEnum(schema types.JSONSchema, method string) {
 	properties, ok := schema["properties"].(map[string]interface{})
 	if !ok {
