@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// paymentRequirementsV2JSON builds the V2 requirements fixture from the
-// TypeScript schema tests, with the network under test.
 func paymentRequirementsV2JSON(t *testing.T, network string) []byte {
 	t.Helper()
 	body := map[string]any{
