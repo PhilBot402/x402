@@ -949,6 +949,7 @@ class TestFastAPIMiddlewareIntegration:
                     response = client.get("/api/protected")
 
             assert response.status_code == 402
+            assert response.json() == {"error": "settlement_failed"}
             assert "PAYMENT-RESPONSE" in response.headers  # distinguishable settle failure
             assert any("unexpected error while settling" in r.getMessage() for r in caplog.records)
 

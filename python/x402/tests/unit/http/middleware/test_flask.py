@@ -918,7 +918,7 @@ class TestFlaskMiddlewareIntegration:
                     response = client.get("/api/protected")
 
             assert response.status_code == 402
-            assert json.loads(response.data) == {}
+            assert json.loads(response.data) == {"error": "settlement_failed"}
             assert "PAYMENT-RESPONSE" in response.headers
             # raw exception detail is logged for operators...
             assert "boom: RPC node unreachable mid-settle" in caplog.text
