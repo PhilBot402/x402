@@ -1880,8 +1880,8 @@ func TestBazaarResourceServerExtension(t *testing.T) {
 	// NOTE: Go's API is different from TypeScript.
 	// In Go, DeclareDiscoveryExtension takes the method as a parameter,
 	// so the schema is already narrow at creation time.
-	// In TypeScript, the method is inferred at runtime from the route key,
-	// so declareDiscoveryExtension creates a broad enum and enrichDeclaration narrows it.
+	// EnrichDeclaration then narrows that enum to the method
+	// resolveDeclaredMethod picks from the request and the input shape.
 
 	t.Run("should enrich declaration with method from HTTP context", func(t *testing.T) {
 		extension, err := bazaar.DeclareDiscoveryExtension(
