@@ -9,7 +9,8 @@
     "build": "tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test index.test.ts"
   },
   "dependencies": {
     "@scure/base": "^1.2.6",
