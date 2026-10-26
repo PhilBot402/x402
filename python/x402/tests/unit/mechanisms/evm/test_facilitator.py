@@ -355,10 +355,12 @@ class TestVerify:
             payload=inner_payload,
         )
 
-        result = ExactEvmFacilitatorScheme(MockFacilitatorSigner()).verify(payload, requirements)
+        signer = MockFacilitatorSigner()
+        result = ExactEvmFacilitatorScheme(signer).verify(payload, requirements)
 
         assert result.is_valid is False
         assert result.invalid_reason == "invalid_exact_evm_non_canonical_signature"
+        assert signer.get_code_calls.get(account.address.lower(), 0) == 1
 
     def test_allows_high_s_deployed_wallet_signature(self):
         account = Account.from_key("0x" + "a" * 64)
@@ -376,11 +378,11 @@ class TestVerify:
             payload=inner_payload,
         )
 
-        result = ExactEvmFacilitatorScheme(MockFacilitatorSigner(code=b"\x60")).verify(
-            payload, requirements
-        )
+        signer = MockFacilitatorSigner(code=b"\x60")
+        result = ExactEvmFacilitatorScheme(signer).verify(payload, requirements)
 
         assert result.is_valid is True
+        assert signer.get_code_calls.get(account.address.lower(), 0) == 1
 
     def test_rejects_wrong_scheme(self):
         signer = MockFacilitatorSigner()
@@ -561,6 +563,20 @@ class TestVerify:
 
         assert result.is_valid is False
         assert result.invalid_reason == ERR_FACTORY_NOT_ALLOWED
+        assert signer.get_code_calls.get(PAYER.lower(), 0) == 1
+
+    def test_wrapped_high_s_signature_is_not_rejected_as_non_canonical(self):
+        inner = bytes.fromhex(make_high_s_signature("0x" + "00" * 65).removeprefix("0x"))
+        signer = MockFacilitatorSigner(code=b"")
+        facilitator = ExactEvmFacilitatorScheme(signer)
+
+        result = facilitator.verify(
+            make_payment_payload(signature=make_erc6492_signature(inner)),
+            make_requirements(),
+        )
+
+        assert result.invalid_reason != "invalid_exact_evm_non_canonical_signature"
+        assert signer.get_code_calls.get(PAYER.lower(), 0) == 1
 
     def test_undeployed_smart_wallet_without_deployment_info_is_rejected(self):
         signer = MockFacilitatorSigner(typed_data_valid=False, code=b"")
@@ -619,6 +635,7 @@ class TestVerify:
 
         assert result.is_valid is False
         assert result.invalid_reason == ERR_INVALID_SIGNATURE
+        assert signer.get_code_calls.get(PAYER.lower(), 0) == 1
 
     def test_rejects_eoa_asset(self):
         # When the asset address has no bytecode (EOA), verify must reject before signature checks.
@@ -1026,10 +1043,51 @@ class TestVerifyV1:
             payload=inner_payload,
         )
 
-        result = ExactEvmSchemeV1(MockFacilitatorSigner()).verify(payload, requirements)
+        signer = MockFacilitatorSigner()
+        result = ExactEvmSchemeV1(signer).verify(payload, requirements)
 
         assert result.is_valid is False
         assert result.invalid_reason == "invalid_exact_evm_non_canonical_signature"
+        assert signer.get_code_calls.get(account.address.lower(), 0) == 1
+
+    def test_allows_high_s_deployed_wallet_signature(self):
+        account = Account.from_key("0x" + "b" * 64)
+        requirements = make_requirements_v1()
+        inner_payload = ExactEvmClientSchemeV1(account).create_payment_payload(requirements)
+        inner_payload["signature"] = make_high_s_signature(inner_payload["signature"])
+        payload = PaymentPayloadV1(
+            x402_version=1,
+            scheme="exact",
+            network="base",
+            payload=inner_payload,
+        )
+
+        signer = MockFacilitatorSigner(code=b"\x60")
+        result = ExactEvmSchemeV1(signer).verify(payload, requirements)
+
+        assert result.is_valid is True
+        assert signer.get_code_calls.get(account.address.lower(), 0) == 1
+
+    def test_low_s_eoa_signature_is_not_a_non_canonical_rejection(self):
+        signer = MockFacilitatorSigner()
+        result = ExactEvmSchemeV1(signer).verify(
+            make_payment_payload_v1(),
+            make_requirements_v1(),
+        )
+
+        assert result.invalid_reason != "invalid_exact_evm_non_canonical_signature"
+        assert signer.get_code_calls.get(PAYER.lower(), 0) == 1
+
+    def test_wrapped_high_s_signature_is_not_rejected_as_non_canonical(self):
+        inner = bytes.fromhex(make_high_s_signature("0x" + "00" * 65).removeprefix("0x"))
+        signer = MockFacilitatorSigner(code=b"")
+        result = ExactEvmSchemeV1(signer).verify(
+            make_payment_payload_v1(signature=make_erc6492_signature(inner)),
+            make_requirements_v1(),
+        )
+
+        assert result.invalid_reason != "invalid_exact_evm_non_canonical_signature"
+        assert signer.get_code_calls.get(PAYER.lower(), 0) == 1
 
     def test_rejects_overpayment_amount_mismatch(self):
         signer = MockFacilitatorSigner()

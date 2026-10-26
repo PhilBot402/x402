@@ -134,12 +134,27 @@ def verify_universal_signature(
     Returns:
         (valid, sig_data) tuple.
     """
-    sig_data = parse_erc6492_signature(signature)
-
-    # Always fetch code — routing mirrors on-chain SignatureChecker (code.length-based).
-    # The old is_eoa_signature fast-path skipped this for 65-byte sigs, causing
-    # pre-verify to return valid for 7702 EOAs whose delegate rejects raw ECDSA on-chain.
     code = signer.get_code(signer_address)
+    return verify_universal_signature_with_code(
+        signer,
+        signer_address,
+        hash,
+        signature,
+        code,
+        allow_undeployed,
+    )
+
+
+def verify_universal_signature_with_code(
+    signer: FacilitatorEvmSigner,
+    signer_address: str,
+    hash: bytes,
+    signature: bytes,
+    code: bytes,
+    allow_undeployed: bool = True,
+) -> tuple[bool, ERC6492SignatureData]:
+    """Verify a signature using bytecode the caller already fetched."""
+    sig_data = parse_erc6492_signature(signature)
     is_deployed = len(code) > 0
     sig_data.code_deployed = is_deployed
 
