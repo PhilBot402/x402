@@ -73,7 +73,6 @@ func VerifyUniversalSignatureWithCode(
 	sigData.CodeDeployed = isDeployed
 	zeroFactory := [20]byte{}
 
-	// Step 5: Handle undeployed address
 	if !isDeployed {
 		// Check if there's ERC-6492 deployment information
 		hasDeploymentInfo := sigData.Factory != zeroFactory &&
@@ -84,8 +83,6 @@ func VerifyUniversalSignatureWithCode(
 			if !allowUndeployed {
 				return false, nil, errors.New(ErrUndeployedSmartWallet + ": undeployed not allowed")
 			}
-			// Preserve deployment info for callers, but require a later simulation
-			// to prove the inner signature would succeed onchain.
 			return false, sigData, nil
 		}
 
@@ -99,7 +96,6 @@ func VerifyUniversalSignatureWithCode(
 		return valid, sigData, nil
 	}
 
-	// Step 6: Deployed smart contract - use EIP-1271 verification
 	valid, err := VerifyEIP1271Signature(
 		ctx,
 		facilitatorSigner,

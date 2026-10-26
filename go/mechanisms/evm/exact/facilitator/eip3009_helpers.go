@@ -194,7 +194,6 @@ func ClassifyEIP3009SignatureWithCode(
 		return classification, nil
 	}
 
-	// CodeDeployed was set from the bytecode passed into verification.
 	if sigData.CodeDeployed {
 		classification.IsSmartWallet = true
 		return classification, nil

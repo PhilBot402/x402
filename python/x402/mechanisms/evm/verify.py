@@ -162,11 +162,6 @@ def verify_universal_signature_with_code(
         if has_deployment_info(sig_data):
             if not allow_undeployed:
                 raise ValueError("Undeployed smart wallet not allowed")
-            # ERC-6492 counterfactual — wallet not yet deployed. Return (False, sig_data)
-            # to signal "deferred to simulation/settle", matching Go's (false, sigData, nil).
-            # Callers that check `valid=True` to accept payments must explicitly handle this
-            # case: the payment is not valid until simulation confirms the factory deploys
-            # the wallet and the transfer succeeds.
             return (False, sig_data)
 
         # No code, no deployment info — plain EOA path (ecrecover only)

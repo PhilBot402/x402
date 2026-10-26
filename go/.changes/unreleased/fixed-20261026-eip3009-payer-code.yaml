@@ -1,3 +1,0 @@
-kind: fixed
-body: EIP-3009 verify reuses the payer code lookup when checking high-s signatures, so a deployed wallet no longer costs a second eth_getCode.
-time: 2026-10-26T17:30:00Z

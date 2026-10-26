@@ -131,7 +131,6 @@ def classify_eip3009_signature(
             sig_data=sig_data,
         )
 
-    # code_deployed was set from the bytecode passed into verification.
     if sig_data.code_deployed:
         return EIP3009SignatureClassification(
             valid=False,
