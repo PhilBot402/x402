@@ -185,6 +185,18 @@ app.post("/verify", async (req, res) => {
       });
     }
 
+    if (
+      paymentRequirements.scheme === "exact" &&
+      paymentRequirements.network.startsWith("eip155:") &&
+      !("authorization" in payloadField) &&
+      !("permit2Authorization" in payloadField)
+    ) {
+      return res.status(400).json({
+        error:
+          "paymentPayload.payload must include authorization or permit2Authorization",
+      });
+    }
+
     // Hooks will automatically:
     // - Track verified payment (onAfterVerify)
     // - Extract and catalog discovery info (onAfterVerify)
@@ -251,6 +263,18 @@ app.post("/settle", async (req, res) => {
         errorReason: "unsupported_scheme",
         transaction: "",
         network: paymentRequirements.network || "unknown",
+      });
+    }
+
+    if (
+      paymentRequirements.scheme === "exact" &&
+      paymentRequirements.network.startsWith("eip155:") &&
+      !("authorization" in payloadField) &&
+      !("permit2Authorization" in payloadField)
+    ) {
+      return res.status(400).json({
+        error:
+          "paymentPayload.payload must include authorization or permit2Authorization",
       });
     }
 
