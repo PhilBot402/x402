@@ -1,8 +1,16 @@
 """Unit tests for x402Facilitator and x402FacilitatorSync."""
 
+import pytest
+
 from x402 import x402Facilitator, x402FacilitatorSync
 from x402.interfaces import FacilitatorExtension
-from x402.schemas import SettleResponse, VerifyResponse
+from x402.schemas import (
+    PaymentPayload,
+    PaymentRequirements,
+    SchemeNotFoundError,
+    SettleResponse,
+    VerifyResponse,
+)
 
 # =============================================================================
 # Mock Scheme Facilitators
@@ -413,3 +421,91 @@ class TestFindFacilitatorV1:
         assert facilitator._find_facilitator("exact", "base-sepolia") is None
         # V1 lookup shouldn't find V2
         assert facilitator._find_facilitator_v1("exact", "eip155:8453") is None
+
+
+def _requirements(network: str, scheme: str = "exact") -> PaymentRequirements:
+    return PaymentRequirements(
+        scheme=scheme,
+        network=network,
+        asset="0x0000000000000000000000000000000000000000",
+        amount="1000000",
+        pay_to="0x1234567890123456789012345678901234567890",
+        max_timeout_seconds=300,
+    )
+
+
+def _payload(requirements: PaymentRequirements) -> PaymentPayload:
+    return PaymentPayload(x402_version=2, payload={}, accepted=requirements)
+
+
+class TestMixedNamespaceRegistration:
+    """Regression coverage for https://github.com/x402-foundation/x402/issues/3172."""
+
+    def test_keeps_namespace_wildcard_when_mixed_with_another_namespace(self):
+        """A multi-network namespace keeps its wildcard inside a mixed register()."""
+        facilitator = x402FacilitatorSync()
+        scheme = MockSchemeNetworkFacilitator("exact")
+        facilitator.register(
+            ["stellar:testnet", "stellar:futurenet", "eip155:8453"],
+            scheme,
+        )
+
+        stellar = _requirements("stellar:pubnet")
+        stellar_result = facilitator.verify(_payload(stellar), stellar)
+        assert stellar_result.is_valid is True
+
+        evm = _requirements("eip155:8453")
+        evm_result = facilitator.verify(_payload(evm), evm)
+        assert evm_result.is_valid is True
+
+        unlisted_evm = _requirements("eip155:11155111")
+        with pytest.raises(
+            SchemeNotFoundError,
+            match="No scheme 'exact' registered for network 'eip155:11155111'",
+        ):
+            facilitator.verify(_payload(unlisted_evm), unlisted_evm)
+
+        unknown = _requirements("solana:mainnet")
+        with pytest.raises(
+            SchemeNotFoundError,
+            match="No scheme 'exact' registered for network 'solana:mainnet'",
+        ):
+            facilitator.verify(_payload(unknown), unknown)
+
+    def test_derives_independent_wildcards_for_two_namespaces(self):
+        """Two multi-network namespaces in one register() each keep a wildcard."""
+        facilitator = x402FacilitatorSync()
+        scheme = MockSchemeNetworkFacilitator("exact")
+        facilitator.register(
+            ["stellar:testnet", "stellar:futurenet", "eip155:8453", "eip155:1"],
+            scheme,
+        )
+
+        stellar = _requirements("stellar:pubnet")
+        stellar_result = facilitator.verify(_payload(stellar), stellar)
+        assert stellar_result.is_valid is True
+
+        evm = _requirements("eip155:11155111")
+        evm_result = facilitator.verify(_payload(evm), evm)
+        assert evm_result.is_valid is True
+        assert len(scheme.verify_calls) == 2
+
+    def test_advertises_each_network_once_for_mixed_namespace_registration(self):
+        """get_supported lists each network once when one register() spans namespaces."""
+        facilitator = x402FacilitatorSync()
+        scheme = MockSchemeNetworkFacilitator("exact")
+        facilitator.register(
+            ["stellar:testnet", "stellar:pubnet", "eip155:8453"],
+            scheme,
+        )
+
+        kinds = facilitator.get_supported().kinds
+        assert len(kinds) == 3
+        networks_seen = [kind.network for kind in kinds]
+        assert len(set(networks_seen)) == 3
+        assert sorted(networks_seen) == ["eip155:8453", "stellar:pubnet", "stellar:testnet"]
+
+        stellar = _requirements("stellar:testnet")
+        facilitator.verify(_payload(stellar), stellar)
+        evm = _requirements("eip155:8453")
+        facilitator.verify(_payload(evm), evm)
