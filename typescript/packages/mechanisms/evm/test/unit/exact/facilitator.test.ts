@@ -2905,3 +2905,111 @@ describe("shared Permit2 simulation helpers", () => {
     ).toBe(false);
   });
 });
+
+describe("x402Facilitator malformed exact EVM payloads", () => {
+  const network = "eip155:84532";
+  const payer = "0x1234567890123456789012345678901234567890";
+  const payTo = "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0";
+  const asset = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network,
+    amount: "1000000",
+    asset,
+    payTo,
+    maxTimeoutSeconds: 300,
+    extra: { name: "USDC", version: "2" },
+  };
+  const authorization = {
+    from: payer,
+    to: payTo,
+    value: requirements.amount,
+    validAfter: "0",
+    validBefore: "999999999999",
+    nonce: "0x00",
+  };
+  const permit2Authorization = {
+    from: payer,
+    spender: x402ExactPermit2ProxyAddress,
+    nonce: "1",
+    deadline: "999999999999",
+    permitted: { token: asset, amount: requirements.amount },
+    witness: { to: payTo, validAfter: "0" },
+  };
+
+  const cases: { name: string; payload: Record<string, unknown> }[] = [
+    { name: "empty authorization", payload: { authorization: {} } },
+    {
+      name: "missing value",
+      payload: {
+        authorization: {
+          from: payer,
+          to: payTo,
+          validAfter: "0",
+          validBefore: "999999999999",
+          nonce: "0x00",
+        },
+      },
+    },
+    {
+      name: "non-numeric value",
+      payload: { authorization: { ...authorization, value: "abc" } },
+    },
+    { name: "missing authorization", payload: {} },
+    { name: "empty permit2 authorization", payload: { permit2Authorization: {} } },
+    {
+      name: "non-numeric permit2 amount",
+      payload: {
+        permit2Authorization: {
+          ...permit2Authorization,
+          permitted: { token: asset, amount: "abc" },
+        },
+      },
+    },
+  ];
+
+  function makeFacilitator() {
+    const getCode = vi.fn().mockResolvedValue("0x6080604052" as `0x${string}`);
+    const signer: FacilitatorEvmSigner = {
+      getAddresses: () => [payTo as `0x${string}`],
+      readContract: vi.fn().mockResolvedValue("0x1626ba7e"),
+      verifyTypedData: vi.fn().mockResolvedValue(true),
+      writeContract: vi.fn(),
+      sendTransaction: vi.fn(),
+      waitForTransactionReceipt: vi.fn(),
+      getCode,
+    };
+    const facilitator = registerExactEvmScheme(new x402Facilitator(), {
+      signer,
+      networks: network,
+    });
+    return { facilitator, getCode };
+  }
+
+  function payment(payload: Record<string, unknown>): PaymentPayload {
+    return {
+      x402Version: 2,
+      payload,
+      accepted: requirements,
+      resource: { url: "https://example.com", description: "", mimeType: "" },
+    };
+  }
+
+  it.each(cases)("verify returns invalid_payload for $name", async ({ payload: body }) => {
+    const { facilitator, getCode } = makeFacilitator();
+    const result = await facilitator.verify(payment(body), requirements);
+    expect(result.isValid).toBe(false);
+    expect(result.invalidReason).toBe("invalid_payload");
+    expect(getCode).not.toHaveBeenCalled();
+  });
+
+  it.each(cases)("settle returns invalid_payload for $name", async ({ payload: body }) => {
+    const { facilitator, getCode } = makeFacilitator();
+    const result = await facilitator.settle(payment(body), requirements);
+    expect(result.success).toBe(false);
+    expect(result.errorReason).toBe("invalid_payload");
+    expect(result.transaction).toBe("");
+    expect(result.network).toBe(network);
+    expect(getCode).not.toHaveBeenCalled();
+  });
+});
