@@ -13,6 +13,7 @@ from typing import Any
 from typing_extensions import Self
 
 from .schemas import (
+    AfterSettleAbortError,
     PaymentPayload,
     PaymentPayloadV1,
     PaymentRequired,
@@ -295,7 +296,12 @@ class x402ResourceServer(x402ResourceServerBase):
                     else:
                         result = await settle_with_pending_retry_async(target, p, r)
                 else:
-                    result = await self._execute_hook(target, ctx)
+                    try:
+                        result = await self._execute_hook(target, ctx)
+                    except AfterSettleAbortError as abort:
+                        if phase_cmd != "after":
+                            raise
+                        result = abort
         except StopIteration as e:
             return await self._finalize_settle_result_async(
                 e.value,
@@ -615,7 +621,12 @@ class x402ResourceServerSync(x402ResourceServerBase):
                     else:
                         result = settle_with_pending_retry(target, p, r)
                 else:
-                    result = self._execute_hook_sync(target, ctx)
+                    try:
+                        result = self._execute_hook_sync(target, ctx)
+                    except AfterSettleAbortError as abort:
+                        if phase_cmd != "after":
+                            raise
+                        result = abort
         except StopIteration as e:
             return self._finalize_settle_result(
                 e.value,
