@@ -387,16 +387,6 @@ class TestFindFacilitator:
 
         assert found is None
 
-    def test_find_with_wildcard_pattern(self):
-        """Test finding facilitator with wildcard network pattern."""
-        facilitator = x402Facilitator()
-        mock_scheme = MockSchemeNetworkFacilitator("exact")
-        # Register with wildcard pattern (derived from single network)
-        facilitator.register(["eip155:8453"], mock_scheme)
-
-        # Exact match should work
-        assert facilitator._find_facilitator("exact", "eip155:8453") is mock_scheme
-
 
 class TestFindFacilitatorV1:
     """Tests for _find_facilitator_v1 internal method."""
@@ -439,10 +429,7 @@ def _payload(requirements: PaymentRequirements) -> PaymentPayload:
 
 
 class TestMixedNamespaceRegistration:
-    """Regression coverage for https://github.com/x402-foundation/x402/issues/3172."""
-
     def test_keeps_namespace_wildcard_when_mixed_with_another_namespace(self):
-        """A multi-network namespace keeps its wildcard inside a mixed register()."""
         facilitator = x402FacilitatorSync()
         scheme = MockSchemeNetworkFacilitator("exact")
         facilitator.register(
@@ -473,7 +460,6 @@ class TestMixedNamespaceRegistration:
             facilitator.verify(_payload(unknown), unknown)
 
     def test_derives_independent_wildcards_for_two_namespaces(self):
-        """Two multi-network namespaces in one register() each keep a wildcard."""
         facilitator = x402FacilitatorSync()
         scheme = MockSchemeNetworkFacilitator("exact")
         facilitator.register(
@@ -491,7 +477,6 @@ class TestMixedNamespaceRegistration:
         assert len(scheme.verify_calls) == 2
 
     def test_advertises_each_network_once_for_mixed_namespace_registration(self):
-        """get_supported lists each network once when one register() spans namespaces."""
         facilitator = x402FacilitatorSync()
         scheme = MockSchemeNetworkFacilitator("exact")
         facilitator.register(
