@@ -272,7 +272,8 @@ class ExactEvmScheme:
 
         try:
             signature = hex_to_bytes(evm_payload.signature)
-            if is_plain_non_canonical_ecdsa_signature(self._signer, payer, signature):
+            payer_code = self._signer.get_code(payer)
+            if is_plain_non_canonical_ecdsa_signature(signature, len(payer_code) > 0):
                 return (
                     VerifyResponse(
                         is_valid=False,
@@ -289,6 +290,7 @@ class ExactEvmScheme:
                 token_address,
                 extra["name"],
                 extra["version"],
+                payer_code,
             )
             if not classification.valid and classification.is_undeployed:
                 if not has_deployment_info(classification.sig_data):
