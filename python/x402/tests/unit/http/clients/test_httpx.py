@@ -1,5 +1,7 @@
 """Unit tests for x402.http.clients.httpx - httpx transport wrapper."""
 
+import gzip
+import json
 import warnings
 from unittest.mock import AsyncMock, MagicMock
 
@@ -1017,6 +1019,36 @@ class TestBasicFunctionalityParameterized:
 
         assert response.status_code == 402
         assert mock_client.create_payment_payload_call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_returned_gzip_402_is_json(self):
+        payload = {"error": "payment rejected"}
+        decoded = json.dumps(payload).encode()
+        compressed = gzip.compress(decoded)
+        response_402 = httpx.Response(
+            402,
+            content=compressed,
+            headers={
+                "content-encoding": "gzip",
+                "content-length": str(len(compressed)),
+                "content-type": "application/json",
+            },
+            request=httpx.Request("GET", "https://example.com/paid"),
+        )
+        mock_transport = AsyncMock()
+        mock_transport.handle_async_request = AsyncMock(return_value=response_402)
+        transport = x402AsyncTransport(MockX402Client(), mock_transport)
+        request = httpx.Request(
+            "GET",
+            "https://example.com/paid",
+            extensions={x402AsyncTransport.RETRY_KEY: True},
+        )
+
+        response = await transport.handle_async_request(request)
+
+        assert response.json() == payload
+        assert response.content == decoded
+        assert "content-encoding" not in response.headers
 
 
 # =============================================================================

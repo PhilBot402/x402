@@ -1,5 +1,6 @@
 """Unit tests for x402.http.clients.requests - requests adapter wrapper."""
 
+import gzip
 import io
 import json
 from unittest.mock import MagicMock, patch
@@ -28,6 +29,7 @@ from x402.schemas.hooks import PaymentRequiredHeadersResult, RecoveredResponseRe
 # Skip tests if requests not installed
 pytest.importorskip("requests")
 import requests
+from urllib3.response import HTTPResponse
 
 
 def _attach_raw(response: MagicMock, content: bytes | None = None) -> MagicMock:
@@ -932,6 +934,36 @@ class TestBasicFunctionalityWithFixtures:
 
             assert response.status_code == 402
             assert adapter._client.create_payment_payload_call_count == 0
+
+    def test_returned_gzip_402_is_json(self, adapter):
+        payload = {"error": "payment rejected"}
+        decoded = json.dumps(payload).encode()
+        compressed = gzip.compress(decoded)
+        headers = {
+            "Content-Encoding": "gzip",
+            "Content-Length": str(len(compressed)),
+            "Content-Type": "application/json",
+        }
+        response_402 = requests.Response()
+        response_402.status_code = 402
+        response_402.headers = requests.structures.CaseInsensitiveDict(headers)
+        response_402.raw = HTTPResponse(
+            body=io.BytesIO(compressed),
+            headers=response_402.headers,
+            status=402,
+            preload_content=False,
+            decode_content=False,
+        )
+        response_402.url = "https://example.com/paid"
+
+        request = _create_request()
+        request.headers[x402HTTPAdapter.RETRY_HEADER] = "1"
+        with patch("requests.adapters.HTTPAdapter.send", return_value=response_402):
+            response = adapter.send(request)
+
+        assert response.json() == payload
+        assert response.content == decoded
+        assert "content-encoding" not in response.headers
 
 
 class TestErrorHandlingWithFixtures:
