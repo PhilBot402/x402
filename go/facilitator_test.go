@@ -593,9 +593,6 @@ func TestFacilitatorNetworkPatternMatching(t *testing.T) {
 	}
 }
 
-// Regression for https://github.com/x402-foundation/x402/issues/3172.
-// A namespace with several networks must keep its wildcard when the same
-// Register call also includes another namespace.
 func TestFacilitatorKeepsNamespaceWildcardWhenMixed(t *testing.T) {
 	facilitator := Newx402Facilitator()
 	mockFacilitator := &mockSchemeNetworkFacilitator{scheme: "exact"}
