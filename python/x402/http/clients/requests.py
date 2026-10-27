@@ -118,15 +118,25 @@ class x402HTTPAdapter(HTTPAdapter):
                 _ = resp.content
             return resp
 
+        def _read_capped_body(resp: requests.Response) -> bytes:
+            raw = resp.raw
+            stream = getattr(raw, "stream", None)
+            # urllib3 is opened with decode_content=False, so only stream() yields the decoded body.
+            if callable(stream):
+                return read_limited_body(stream(decode_content=True))
+            return read_limited_body(raw)
+
         def _cap_returned_payment_required(resp: requests.Response) -> requests.Response:
             if resp.status_code != 402:
                 return _finalize_response(resp)
             try:
-                content = read_limited_body(resp.raw)
+                content = _read_capped_body(resp)
             finally:
                 resp.close()
             resp._content = content
             resp._content_consumed = True
+            for name in ("content-encoding", "content-length"):
+                resp.headers.pop(name, None)
             return resp
 
         # Make initial request (always stream so 402 bodies can be capped before buffering)
@@ -142,7 +152,7 @@ class x402HTTPAdapter(HTTPAdapter):
 
         try:
             try:
-                content = read_limited_body(response.raw)
+                content = _read_capped_body(response)
             finally:
                 response.close()
 
@@ -168,7 +178,7 @@ class x402HTTPAdapter(HTTPAdapter):
                 if hook_response.status_code != 402:
                     return _finalize_response(hook_response)
                 try:
-                    read_limited_body(hook_response.raw)
+                    _read_capped_body(hook_response)
                 finally:
                     hook_response.close()
 
@@ -195,7 +205,7 @@ class x402HTTPAdapter(HTTPAdapter):
             if process_result.recovered:
                 if paid_response.status_code == 402:
                     try:
-                        read_limited_body(paid_response.raw)
+                        _read_capped_body(paid_response)
                     finally:
                         paid_response.close()
                 # Retry once with a fresh payload after recovery

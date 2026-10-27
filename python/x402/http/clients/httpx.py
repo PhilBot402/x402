@@ -34,9 +34,14 @@ async def _cap_returned_payment_required(response: Response, request: Request) -
     extensions = getattr(response, "extensions", None)
     if not isinstance(extensions, dict):
         extensions = dict(request.extensions)
+    # aiter_bytes() is already decoded, so these headers do not describe that body.
+    headers = response.headers.copy()
+    for name in ("content-encoding", "content-length"):
+        if name in headers:
+            del headers[name]
     return Response(
         status_code=402,
-        headers=response.headers,
+        headers=headers,
         content=body,
         request=req,
         extensions=extensions,
