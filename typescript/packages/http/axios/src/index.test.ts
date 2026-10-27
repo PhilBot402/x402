@@ -540,9 +540,9 @@ describe("wrapAxiosWithPayment()", () => {
     const { x402HTTPClient: MockX402HTTPClient } = await import("@x402/core/client");
     const oversizedBody = new Uint8Array(MAX_CONTROL_PLANE_RESPONSE_BYTES + 1);
 
-    const error = await interceptor(createAxiosError(402, createErrorConfig(), oversizedBody)).catch(
-      caught => caught as Error,
-    );
+    const error = await interceptor(
+      createAxiosError(402, createErrorConfig(), oversizedBody),
+    ).catch(caught => caught as Error);
 
     expect(error).toBeInstanceOf(ResponseBodyTooLargeError);
     expect(mockAxiosClient.request).not.toHaveBeenCalled();

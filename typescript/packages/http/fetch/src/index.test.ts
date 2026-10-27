@@ -589,6 +589,21 @@ describe("wrapFetchWithPayment()", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("returns a paid-retry 402 body the caller can read", async () => {
+    const body = JSON.stringify({ reason: "payment rejected" });
+    mockFetch
+      .mockResolvedValueOnce(
+        createResponse(402, validPaymentRequired, { "PAYMENT-REQUIRED": "encoded-header" }),
+      )
+      .mockResolvedValueOnce(new Response(body, { status: 402, statusText: "Payment Required" }));
+
+    const result = await wrappedFetch("https://api.example.com/data", { method: "GET" });
+
+    expect(result.status).toBe(402);
+    expect(await result.text()).toBe(body);
+    expect(mockClient.createPaymentPayload).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects an oversized paid-retry 402 response", async () => {
     const closed = { value: false };
     const stream = new ReadableStream<Uint8Array>({
