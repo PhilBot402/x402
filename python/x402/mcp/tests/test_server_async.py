@@ -841,6 +841,26 @@ async def test_prefers_cancel_refund_receipt_when_handler_throws_under_escrow():
 
 
 @pytest.mark.asyncio
+async def test_cancel_without_before_handler_omits_payment_meta_and_reraises():
+    server = MockAsyncResourceServer()
+    cancel_receipt = SettleResponse(
+        success=True, amount="0", transaction="0xcancel", network="eip155:84532"
+    )
+    dispatcher = Mock()
+    dispatcher.cancel = AsyncMock(return_value=cancel_receipt)
+    server.create_payment_cancellation_dispatcher = Mock(return_value=dispatcher)
+    paid = create_payment_wrapper(server, PaymentWrapperConfig(accepts=_mcp_accepts_async()))
+
+    async def handler(_args, _context):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await paid(handler)({"test": "arg"}, _mcp_extra_async(_mcp_payload_async()))
+    dispatcher.cancel.assert_awaited_once()
+    assert server.settle_payment.await_count == 0
+
+
+@pytest.mark.asyncio
 async def test_unexpected_errors_return_generic_internal_server_error():
     server = MockAsyncResourceServer()
     server.get_payment_flow = Mock(

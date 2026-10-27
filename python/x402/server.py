@@ -341,7 +341,7 @@ class x402ResourceServer(x402ResourceServerBase):
 
         scheme = self._find_registered_scheme(requirements.scheme, requirements.network)
         settle_on_cancel = getattr(scheme, "settle_on_cancel", None) if scheme else None
-        if settle_on_cancel is None or "before-handler" not in resolved_phases:
+        if settle_on_cancel is None:
             return None
 
         label = f'scheme "{requirements.scheme}" settleOnCancel'
@@ -662,7 +662,7 @@ class x402ResourceServerSync(x402ResourceServerBase):
 
         scheme = self._find_registered_scheme(requirements.scheme, requirements.network)
         settle_on_cancel = getattr(scheme, "settle_on_cancel", None) if scheme else None
-        if settle_on_cancel is None or "before-handler" not in resolved_phases:
+        if settle_on_cancel is None:
             return None
 
         label = f'scheme "{requirements.scheme}" settleOnCancel'
