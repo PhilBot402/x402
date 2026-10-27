@@ -847,15 +847,16 @@ func (f *BatchSvmScheme) defaultSealDependencies() SealDependencies {
 		ResolveDelegatedIdentity: func(ctx context.Context, settle DelegatedSettleContext) (string, error) {
 			return ResolveDelegatedIdentity(ctx, f.delegated, settle)
 		},
-		DeriveChannelID:       f.deriveChannelID,
-		FetchChannel:          f.fetchChannel,
-		ReadChannel:           f.readChannel,
-		AssertClaimChannel:    f.assertClaimChannel,
-		DistributeInstruction: f.distributeInstruction,
-		SubmitRedemption:      f.submitRedemption,
-		CompleteOrPending:     f.completeOrPending,
-		NowSeconds:            f.now,
-		SettlementCache:       f.settlementCache,
+		DeriveChannelID:         f.deriveChannelID,
+		FetchChannel:            f.fetchChannel,
+		ReadChannel:             f.readChannel,
+		AssertClaimChannel:      f.assertClaimChannel,
+		DistributeInstruction:   f.distributeInstruction,
+		SubmitRedemption:        f.submitRedemption,
+		CompleteOrPending:       f.completeOrPending,
+		NowSeconds:              f.now,
+		SettlementCache:         f.settlementCache,
+		OnDistributionConfirmed: f.config.OnDistributionConfirmed,
 	}
 }
 
