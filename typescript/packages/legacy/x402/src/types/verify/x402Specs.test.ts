@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { x402ResponseSchema } from "./x402Specs";
 
 describe("x402Specs Regex Patterns", () => {
   // Import the regex patterns from the source file
@@ -173,5 +174,39 @@ describe("x402Specs Regex Patterns", () => {
         expect(Evm6492SignatureRegex.test(signature)).toBe(true);
       });
     });
+  });
+});
+
+describe("x402ResponseSchema accepts bound", () => {
+  const requirement = {
+    scheme: "exact",
+    network: "base",
+    maxAmountRequired: "10000",
+    resource: "https://api.example.com/premium-data",
+    description: "Access to premium market data",
+    mimeType: "application/json",
+    payTo: "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+    maxTimeoutSeconds: 60,
+    asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  };
+
+  it("should accept 1024 payment options", () => {
+    const result = x402ResponseSchema.safeParse({
+      x402Version: 1,
+      accepts: Array.from({ length: 1024 }, () => requirement),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("should reject an accepts list longer than 1024 without an issue per element", () => {
+    const result = x402ResponseSchema.safeParse({
+      x402Version: 1,
+      accepts: Array.from({ length: 5000 }, () => ({})),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toHaveLength(1);
+      expect(result.error.issues[0]?.code).toBe("too_big");
+    }
   });
 });
