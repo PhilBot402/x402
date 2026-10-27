@@ -721,16 +721,14 @@ describe("createPaymentWrapper", () => {
       expect(result._meta?.[MCP_PAYMENT_RESPONSE_META_KEY]).toEqual(cancelReceipt);
     });
 
-    it("returns internal error with cancel receipt when handler throws without before-handler settle", async () => {
-      const cancelReceipt: SettleResponse = {
+    it("cancels without before-handler settle and rethrows when handler throws", async () => {
+      const cancel = vi.fn().mockResolvedValue({
         success: true,
         amount: "0",
-        transaction: "0xrefund",
+        transaction: "0xcancel",
         network: "eip155:84532",
-      };
-      mockResourceServer.createPaymentCancellationDispatcher.mockReturnValue({
-        cancel: vi.fn().mockResolvedValue(cancelReceipt),
-      });
+      } satisfies SettleResponse);
+      mockResourceServer.createPaymentCancellationDispatcher.mockReturnValue({ cancel });
 
       const paid = createPaymentWrapper(
         mockResourceServer as unknown as Parameters<typeof createPaymentWrapper>[0],
@@ -738,17 +736,13 @@ describe("createPaymentWrapper", () => {
           accepts: [mockPaymentRequirements],
         },
       );
-      const handler = vi.fn().mockRejectedValue(new Error("handler failed"));
-      const wrappedHandler = paid(handler);
+      const handlerError = new Error("handler failed");
+      const wrappedHandler = paid(vi.fn().mockRejectedValue(handlerError));
 
-      const result = await wrappedHandler(
-        { test: "arg" },
-        { _meta: { "x402/payment": mockPaymentPayload } },
-      );
-
-      expect(result.isError).toBe(true);
-      expect(result.content).toEqual([{ type: "text", text: "Internal Server Error" }]);
-      expect(result._meta?.[MCP_PAYMENT_RESPONSE_META_KEY]).toEqual(cancelReceipt);
+      await expect(
+        wrappedHandler({ test: "arg" }, { _meta: { "x402/payment": mockPaymentPayload } }),
+      ).rejects.toBe(handlerError);
+      expect(cancel).toHaveBeenCalledTimes(1);
     });
 
     it("should settle skipHandler responses without executing the tool", async () => {

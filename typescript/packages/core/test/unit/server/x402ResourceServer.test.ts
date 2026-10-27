@@ -1393,13 +1393,13 @@ describe("x402ResourceServer", () => {
         expect(settleClient.settleCalls).toHaveLength(0);
       });
 
-      it("skips settleOnCancel when before-handler deposit did not complete", async () => {
+      it("settles on cancel without a before-handler deposit", async () => {
         const settleClient = new MockFacilitatorClient(
           buildSupportedResponse({
             kinds: [{ x402Version: 2, scheme: "upto", network: "eip155:8453" as Network }],
           }),
           undefined,
-          buildSettleResponse({ success: true, amount: "0" }),
+          buildSettleResponse({ success: true, amount: "0", transaction: "0xcancel" }),
         );
         const server = new x402ResourceServer(settleClient);
         const scheme = new MockSchemeNetworkServer("upto");
@@ -1416,8 +1416,16 @@ describe("x402ResourceServer", () => {
           buildPaymentRequirements({ scheme: "upto", network: "eip155:8453" as Network }),
         );
 
-        await cancellation.cancel({ reason: "handler_failed", responseStatus: 500 });
-        expect(settleClient.settleCalls).toHaveLength(0);
+        const cancelResult = await cancellation.cancel({
+          reason: "handler_failed",
+          responseStatus: 500,
+        });
+
+        expect(cancelResult).toEqual(
+          expect.objectContaining({ success: true, transaction: "0xcancel" }),
+        );
+        expect(settleClient.settleCalls).toHaveLength(1);
+        expect(settleClient.settleCalls[0].requirements.amount).toBe("0");
       });
 
       it("warns and preserves cancel when settleOnCancel settlement fails", async () => {

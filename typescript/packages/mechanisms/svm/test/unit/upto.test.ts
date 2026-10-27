@@ -402,6 +402,25 @@ describe("upto SVM scheme", () => {
         expect(requirements).toEqual({ ...baseRequirements, amount: "0" });
       },
     );
+
+    it.each([
+      { name: "empty phases", settledPhases: [] },
+      { name: "after-handler only", settledPhases: ["after-handler"] },
+    ] as const)("skips cancel before the deposit settled ($name)", ({ settledPhases }) => {
+      const requirements = server.settleOnCancel({
+        paymentPayload: {
+          x402Version: 2,
+          accepted: baseRequirements,
+          payload: {},
+        },
+        requirements: baseRequirements,
+        declaredExtensions: {},
+        phase: "cancel",
+        reason: "handler_failed",
+        settledPhases,
+      });
+      expect(requirements).toBeUndefined();
+    });
   });
 
   describe("server.enrichSettlementPayload", () => {
