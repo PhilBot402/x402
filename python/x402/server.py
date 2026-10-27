@@ -299,6 +299,7 @@ class x402ResourceServer(x402ResourceServerBase):
                     try:
                         result = await self._execute_hook(target, ctx)
                     except AfterSettleAbortError as abort:
+                        # The settle generator receives hook results via send(), so the abort is returned to it.
                         if phase_cmd != "after":
                             raise
                         result = abort
@@ -624,6 +625,7 @@ class x402ResourceServerSync(x402ResourceServerBase):
                     try:
                         result = self._execute_hook_sync(target, ctx)
                     except AfterSettleAbortError as abort:
+                        # The settle generator receives hook results via send(), so the abort is returned to it.
                         if phase_cmd != "after":
                             raise
                         result = abort
