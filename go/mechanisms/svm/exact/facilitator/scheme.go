@@ -30,6 +30,17 @@ type Config struct {
 	MaxRequiredSignatures                  *uint8
 }
 
+// accountInfoReader is the optional signer cap used to explain a failed simulation.
+// Exact-only signers omit it, so a missing method keeps the original failure.
+type accountInfoReader interface {
+	GetAccountInfo(
+		ctx context.Context,
+		account solana.PublicKey,
+		network string,
+		opts *rpc.GetAccountInfoOpts,
+	) (*rpc.GetAccountInfoResult, error)
+}
+
 // ExactSvmScheme implements the SchemeNetworkFacilitator interface for SVM (Solana) exact payments (V2)
 type ExactSvmScheme struct {
 	signer          svm.FacilitatorSvmSigner
@@ -467,9 +478,7 @@ func (f *ExactSvmScheme) verifyStaticPath(
 	// Signatures are verified locally; the fee-payer slot is unsigned until settle.
 	if err := f.signer.SimulateTransaction(ctx, tx, string(requirements.Network), nil); err != nil {
 		failure := x402.NewVerifyError(ErrTransactionSimulationFailed, payer, err.Error())
-		reader, ok := f.signer.(interface {
-			GetAccountInfo(context.Context, solana.PublicKey, string, *rpc.GetAccountInfoOpts) (*rpc.GetAccountInfoResult, error)
-		})
+		reader, ok := f.signer.(accountInfoReader)
 		if !ok {
 			return failure
 		}
