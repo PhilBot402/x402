@@ -210,7 +210,7 @@ export function wrapAxiosWithPayment(
       }
 
       try {
-        const response = error.response!; // Already validated above
+        const response = error.response;
         assertAxiosResponseBodyWithinLimit(response.data);
 
         // Parse payment requirements from response

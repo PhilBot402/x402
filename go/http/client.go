@@ -297,7 +297,7 @@ func (t *PaymentRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		return newResp, nil
 	}
 
-	// Drain the corrective 402 body so connection can be reused.
+	// The cap already closed the transport body. Drop the buffered 402 before the recovery retry.
 	_, _ = io.Copy(io.Discard, newResp.Body)
 	newResp.Body.Close()
 
@@ -485,7 +485,6 @@ func (t *PaymentRoundTripper) sendPaymentRetry(
 	return resp, nil
 }
 
-// replacePaymentRequiredBody caps a 402 that will be returned to the caller.
 // Paid resource payloads are left untouched.
 func replacePaymentRequiredBody(resp *http.Response) error {
 	if resp == nil || resp.StatusCode != http.StatusPaymentRequired {
