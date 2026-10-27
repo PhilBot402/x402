@@ -462,6 +462,64 @@ async def test_create_payment_wrapper_async_settlement_returns_failure():
 
 
 @pytest.mark.asyncio
+async def test_create_payment_wrapper_async_after_settle_abort_attaches_receipt():
+    """An after-settle abort fails the call closed but keeps the onchain receipt in _meta."""
+    from x402.mcp.types import MCP_PAYMENT_RESPONSE_META_KEY
+
+    server = MockAsyncResourceServer()
+    server.settle_payment = AsyncMock(
+        return_value=SettleResponse(
+            success=False,
+            error_reason="voucher_store_unavailable",
+            error_message="store down",
+            transaction="0xdeposit",
+            amount="1000",
+            network="eip155:84532",
+            payer="p",
+            after_settle_aborted=True,
+        )
+    )
+    config = PaymentWrapperConfig(
+        accepts=[
+            PaymentRequirements(
+                scheme="exact",
+                network="eip155:84532",
+                amount="1000",
+                asset="USDC",
+                pay_to="0xrecipient",
+                max_timeout_seconds=300,
+            )
+        ],
+    )
+    paid = create_payment_wrapper(server, config)
+
+    async def handler(args, context):
+        return {"content": [{"type": "text", "text": "ok"}]}
+
+    wrapped = paid(handler)
+    payload = PaymentPayload(
+        x402_version=2,
+        accepted={
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "1000",
+            "asset": "USDC",
+            "pay_to": "0xrecipient",
+            "max_timeout_seconds": 300,
+        },
+        payload={"signature": "0x123"},
+    )
+    result = await wrapped({"test": "value"}, {"_meta": {"x402/payment": payload.model_dump()}})
+
+    assert result.is_error is True
+    receipt = result.meta[MCP_PAYMENT_RESPONSE_META_KEY]
+    assert receipt["success"] is False
+    assert receipt["errorReason"] == "voucher_store_unavailable"
+    assert receipt["transaction"] == "0xdeposit"
+    assert receipt["amount"] == "1000"
+
+
+@pytest.mark.asyncio
 async def test_create_payment_wrapper_async_handler_error_no_settlement():
     """Test that settlement is NOT called when async handler returns an error."""
     server = MockAsyncResourceServer()
