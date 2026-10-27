@@ -1261,6 +1261,32 @@ describe("x402ResourceServer", () => {
           expect(isAfterSettleAborted(result)).toBe(true);
         });
 
+        it("treats a same-name error from another class or copy as an abort", async () => {
+          class OtherCopyAfterSettleAbortError extends Error {
+            readonly reason = "voucher_store_unavailable";
+
+            constructor() {
+              super("store down");
+              this.name = "AfterSettleAbortError";
+            }
+          }
+          mockClient.setSettleResponse(onchainReceipt());
+          server.onAfterSettle(async () => {
+            throw new OtherCopyAfterSettleAbortError();
+          });
+
+          const result = await server.settlePayment(
+            buildPaymentPayload(),
+            buildPaymentRequirements(),
+          );
+
+          expect(result.success).toBe(false);
+          expect(result.errorReason).toBe("voucher_store_unavailable");
+          expect(result.transaction).toBe("0xdeposit");
+          expect(isAfterSettleAborted(result)).toBe(true);
+          expect(JSON.stringify(result)).not.toContain("afterSettleAborted");
+        });
+
         it("keeps plain afterSettle errors non-fatal", async () => {
           const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
           mockClient.setSettleResponse(onchainReceipt());

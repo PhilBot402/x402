@@ -223,6 +223,10 @@ export type BeforeSettleHook = (
  */
 export type AfterSettleHook = (context: SettleResultContext) => Promise<void>;
 
+const AFTER_SETTLE_ABORT_NAME = "AfterSettleAbortError";
+// Registry symbol so separately bundled copies of this module share the marker.
+const AFTER_SETTLE_ABORTED = Symbol.for("x402.afterSettleAborted");
+
 /**
  * Thrown from an `afterSettle` hook to fail a successful settle closed after funds
  * moved onchain but the server could not persist the outcome (e.g. a voucher store failure).
@@ -238,22 +242,35 @@ export class AfterSettleAbortError extends Error {
    */
   constructor(reason: string, message?: string) {
     super(message || reason);
-    this.name = "AfterSettleAbortError";
+    this.name = AFTER_SETTLE_ABORT_NAME;
     this.reason = reason;
   }
 }
 
-const afterSettleAbortedResponses = new WeakSet<SettleResponse>();
+/**
+ * Reports whether an `afterSettle` hook error is an {@link AfterSettleAbortError}. Matches on
+ * `name` as well as `instanceof` so an abort thrown from another bundled copy of this package
+ * still fails the settle closed.
+ *
+ * @param error - Value thrown by an `afterSettle` hook
+ * @returns True when the error is an AfterSettleAbortError
+ */
+function isAfterSettleAbortError(error: unknown): error is AfterSettleAbortError {
+  return (
+    error instanceof AfterSettleAbortError ||
+    (error instanceof Error && error.name === AFTER_SETTLE_ABORT_NAME)
+  );
+}
 
 /**
  * Reports whether an `afterSettle` abort failed this onchain-successful settle response closed.
- * Tracked out of band so the marker never reaches the wire.
+ * The marker is a non-enumerable symbol property, so it never reaches the wire.
  *
  * @param response - Settlement response returned by {@link x402ResourceServer.settlePayment}
  * @returns True when the response was failed closed by an {@link AfterSettleAbortError}
  */
 export function isAfterSettleAborted(response: SettleResponse): boolean {
-  return afterSettleAbortedResponses.has(response);
+  return AFTER_SETTLE_ABORTED in response;
 }
 
 export type OnSettleFailureHook = (
@@ -1939,14 +1956,14 @@ export class x402ResourceServer {
       try {
         await hook(context);
       } catch (error) {
-        if (!(error instanceof AfterSettleAbortError)) {
+        if (!isAfterSettleAbortError(error)) {
           this.warnResourceServerHookFailure("afterSettle", label, error);
           continue;
         }
         result.success = false;
         result.errorReason = error.reason;
         result.errorMessage = error.message;
-        afterSettleAbortedResponses.add(result);
+        Object.defineProperty(result, AFTER_SETTLE_ABORTED, { value: true });
         return true;
       }
     }

@@ -1354,6 +1354,70 @@ describe("createPaymentWrapper", () => {
         errorReason: "voucher_store_unavailable",
       });
     });
+
+    it("attaches the receipt when the server and abort come from another bundled copy of core", async () => {
+      const mockFacilitator: FacilitatorClient = {
+        verify: async () => ({ isValid: true, payer: "test-payer" }),
+        settle: async () => ({
+          success: true,
+          transaction: "0xdeposit",
+          amount: "1000",
+          network: "x402:cash",
+          payer: "test-payer",
+        }),
+        getSupported: async () => ({
+          kinds: [{ x402Version: 2, scheme: "cash", network: "x402:cash" }],
+          extensions: [],
+          signers: {},
+        }),
+      };
+      const scheme: SchemeNetworkServer = {
+        scheme: "cash",
+        defaultAssetTransferMethod: "default",
+        paymentFlows: {
+          default: { supported: ["authorization"], default: "authorization" },
+        },
+        parsePrice: async () => ({ amount: "1000", asset: "USD", extra: {} }),
+        enhancePaymentRequirements: async requirements => requirements,
+      };
+      vi.resetModules();
+      const otherCopy = await import("@x402/core/server");
+      expect(otherCopy.x402ResourceServer).not.toBe(x402ResourceServer);
+      const server = new otherCopy.x402ResourceServer(mockFacilitator);
+      server.register("x402:cash", scheme);
+      await server.initialize();
+      server.onAfterSettle(async () => {
+        throw new otherCopy.AfterSettleAbortError("voucher_store_unavailable", "store down");
+      });
+
+      const cashRequirements: PaymentRequirements = {
+        scheme: "cash",
+        network: "x402:cash",
+        amount: "1000",
+        payTo: "test-recipient",
+        asset: "",
+        maxTimeoutSeconds: 0,
+        extra: {},
+      };
+      const paid = createPaymentWrapper(server, { accepts: [cashRequirements] });
+      const wrappedHandler = paid(async () => ({
+        content: [{ type: "text", text: "ok" }],
+      }));
+      const payload: PaymentPayload = {
+        x402Version: 2,
+        accepted: cashRequirements,
+        payload: { signature: "~test-payer" },
+      };
+
+      const result = await wrappedHandler({}, { _meta: { [MCP_PAYMENT_META_KEY]: payload } });
+
+      expect(result.isError).toBe(true);
+      expect(result._meta?.[MCP_PAYMENT_RESPONSE_META_KEY]).toMatchObject({
+        success: false,
+        transaction: "0xdeposit",
+        errorReason: "voucher_store_unavailable",
+      });
+    });
   });
 
   describe("unexpected errors", () => {
