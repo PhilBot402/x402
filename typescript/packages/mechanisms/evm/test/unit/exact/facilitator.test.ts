@@ -2966,6 +2966,49 @@ describe("x402Facilitator malformed exact EVM payloads", () => {
         },
       },
     },
+    {
+      name: "missing validBefore",
+      payload: {
+        authorization: {
+          from: payer,
+          to: payTo,
+          value: requirements.amount,
+          validAfter: "0",
+          nonce: "0x00",
+        },
+      },
+    },
+    {
+      name: "missing nonce",
+      payload: {
+        authorization: {
+          from: payer,
+          to: payTo,
+          value: requirements.amount,
+          validAfter: "0",
+          validBefore: "999999999999",
+        },
+      },
+    },
+    {
+      name: "non-string value",
+      payload: { authorization: { ...authorization, value: 1000000 } },
+    },
+    {
+      name: "non-string validBefore",
+      payload: { authorization: { ...authorization, validBefore: 999999999999 } },
+    },
+    {
+      name: "non-string permit2 amount",
+      payload: {
+        permit2Authorization: {
+          ...permit2Authorization,
+          permitted: { token: asset, amount: 1000000 },
+        },
+      },
+    },
+    { name: "missing signature", payload: { authorization } },
+    { name: "missing permit2 signature", payload: { permit2Authorization } },
   ];
 
   function makeFacilitator() {
@@ -2999,7 +3042,7 @@ describe("x402Facilitator malformed exact EVM payloads", () => {
     const { facilitator, getCode } = makeFacilitator();
     const result = await facilitator.verify(payment(body), requirements);
     expect(result.isValid).toBe(false);
-    expect(result.invalidReason).toBe("invalid_payload");
+    expect(result.invalidReason).toBe(Errors.ErrInvalidPayload);
     expect(getCode).not.toHaveBeenCalled();
   });
 
@@ -3007,7 +3050,7 @@ describe("x402Facilitator malformed exact EVM payloads", () => {
     const { facilitator, getCode } = makeFacilitator();
     const result = await facilitator.settle(payment(body), requirements);
     expect(result.success).toBe(false);
-    expect(result.errorReason).toBe("invalid_payload");
+    expect(result.errorReason).toBe(Errors.ErrInvalidPayload);
     expect(result.transaction).toBe("");
     expect(result.network).toBe(network);
     expect(getCode).not.toHaveBeenCalled();
