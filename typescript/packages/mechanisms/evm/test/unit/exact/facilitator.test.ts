@@ -1119,6 +1119,30 @@ describe("ExactEvmScheme (Facilitator)", () => {
       expect(result.payer).toBe(erc6492Payer);
     });
 
+    it("rejects a wrapper whose factory calldata is empty, even with the factory allowlisted", async () => {
+      mockFacilitatorSigner.getCode = vi
+        .fn()
+        .mockImplementation(mockGetCodeEOAPayer("0x036CbD53842c5426634e7929541eC2318f3dCF7e"));
+      // As on chain: the factory call with empty calldata fails, the transfer succeeds.
+      mockFacilitatorSigner.readContract = rcWithSig(({ address }: { address: string }) => {
+        if (address === MULTICALL3_ADDRESS) {
+          return Promise.resolve([
+            { success: false, returnData: "0x" },
+            { success: true, returnData: "0x" },
+          ]);
+        }
+        return Promise.resolve(BigInt("10000000"));
+      });
+
+      const result = await cfFacilitator.verify(
+        makeERC6492Payload(makeERC6492Sig(factory, "0x", garbageInnerSig)),
+        erc6492Requirements,
+      );
+
+      expect(result.isValid).toBe(false);
+      expect(result.invalidReason).toBe(Errors.ErrInvalidSignature);
+    });
+
     it("should accept ERC-6492 when verifyTypedData returns true and simulation passes", async () => {
       mockFacilitatorSigner.verifyTypedData = vi.fn().mockResolvedValue(true);
       mockFacilitatorSigner.getCode = vi
