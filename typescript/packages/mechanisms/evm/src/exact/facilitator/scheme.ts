@@ -278,11 +278,14 @@ function isPermit2Authorization(value: unknown): boolean {
 /**
  * Classifies a client payload as EIP-3009 or Permit2.
  *
+ * `parseErc6492Signature` throws when `signature` is not a string, and that
+ * call happens after an `eth_getCode` lookup. Reject it here.
+ *
  * @param payload - Raw `PaymentPayload.payload`
  * @returns The payload kind, or undefined when the shape does not match
  */
 function exactPayloadKind(payload: unknown): ExactPayloadKind | undefined {
-  if (!isObject(payload)) {
+  if (!isObject(payload) || typeof payload.signature !== "string") {
     return undefined;
   }
   if ("permit2Authorization" in payload) {
