@@ -551,10 +551,19 @@ async function buildOpenSettleDistributeSimulationInstructions(
   ];
 }
 
+/**
+ * Message version of a transaction the facilitator builds itself, in the
+ * `extra.transactionVersions` wire vocabulary.
+ */
+export type FacilitatorTransactionVersion = 0 | 1;
+
 /** Options for {@link submitSettle}. */
 export interface SubmitSettleOptions {
-  /** Opt into v1; omitted preserves the existing v0 settlement wire format. */
-  useTransactionV1?: boolean | undefined;
+  /**
+   * Message version (0 or 1) of the transaction the facilitator builds;
+   * omitted preserves the existing v0 settlement wire format.
+   */
+  facilitatorTransactionVersion?: FacilitatorTransactionVersion | undefined;
   /**
    * Inline v1 compute-unit limit for the settlement transaction. Defaults to
    * {@link DEFAULT_SETTLE_COMPUTE_UNIT_LIMIT} (100k), sized for standard SPL
@@ -781,7 +790,12 @@ async function buildChannelTransaction(
   instructions: readonly ServerInstruction[],
   options: SubmitSettleOptions,
 ): Promise<ReturnType<typeof getBase64EncodedWireTransaction>> {
-  const message = options.useTransactionV1
+  const version = options.facilitatorTransactionVersion ?? 0;
+  if (version !== 0 && version !== 1) {
+    throw new Error(`unsupported facilitator transaction version ${String(version)}`);
+  }
+  const isV1 = version === 1;
+  const message = isV1
     ? buildSettleMessage(feePayer, instructions, latestBlockhash, options)
     : pipe(
         createTransactionMessage({ version: 0 }),

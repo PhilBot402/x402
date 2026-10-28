@@ -19,6 +19,7 @@ import {
 } from "../../src/payment-channels/storage";
 import {
   DEFAULT_MAX_RECLAIMS_PER_TX_V1,
+  MAX_SAFE_RECLAIMS_PER_TX,
   UptoSvmRentCleanupManager,
 } from "../../src/upto/facilitator/rentCleanupManager";
 import { UptoSvmScheme } from "../../src/upto/facilitator/scheme";
@@ -420,6 +421,61 @@ describe("UptoSvmRentCleanupManager — cleanup", () => {
     expect(onReclaim).toHaveBeenCalledTimes(1);
     expect(onReclaim.mock.calls[0]![0].channelIds).toHaveLength(62);
     expect(submitSettleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["unset defaults to v1", undefined, 1],
+    ["explicit v0", 0, 0],
+  ] as const)(
+    "honours the configured facilitator transaction version: %s",
+    async (_name, facilitatorTransactionVersion, wantVersion) => {
+      // Built via the scheme to cover config.facilitatorTransactionVersion propagation.
+      manager = new UptoSvmScheme(toFacilitatorSvmSigner(feePayer), {
+        channelStorage: storage,
+        facilitatorTransactionVersion,
+      }).createRentCleanupManager(NETWORK);
+      await seed();
+      fetchMaybeChannelMock.mockResolvedValue(
+        channelAccount({ status: ChannelStatus.Distributed }),
+      );
+      getSlotMock.mockResolvedValue(CURRENT_SLOT_READY);
+
+      const onError = vi.fn();
+      await manager.cleanup({ maxTxsPerSigner: 1, onError });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(submitSettleMock).toHaveBeenCalledTimes(1);
+      expect(submitSettleMock.mock.calls[0]![4].facilitatorTransactionVersion ?? 0).toBe(
+        wantVersion,
+      );
+    },
+  );
+
+  it("caps v0 reclaim batches at the safe limit", async () => {
+    manager = new UptoSvmRentCleanupManager({
+      facilitatorTransactionVersion: 0,
+      network: NETWORK,
+      signer: toFacilitatorSvmSigner(feePayer),
+      storage,
+    });
+    for (let i = 0; i < MAX_SAFE_RECLAIMS_PER_TX + 4; i++) {
+      await seed();
+    }
+    fetchMaybeChannelMock.mockResolvedValue(channelAccount({ status: ChannelStatus.Distributed }));
+    getSlotMock.mockResolvedValue(CURRENT_SLOT_READY);
+
+    const onError = vi.fn();
+    await manager.cleanup({ maxReclaimsPerTx: DEFAULT_MAX_RECLAIMS_PER_TX_V1, onError });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(
+      submitSettleMock,
+      "a v0 batch never exceeds MAX_SAFE_RECLAIMS_PER_TX",
+    ).toHaveBeenCalledTimes(2);
+    for (const call of submitSettleMock.mock.calls) {
+      expect(call[3].length).toBeLessThanOrEqual(MAX_SAFE_RECLAIMS_PER_TX);
+      expect(call[4].facilitatorTransactionVersion ?? 0).toBe(0);
+    }
   });
 
   // A misconfigured non-positive maxReclaimsPerTx must fall back to the

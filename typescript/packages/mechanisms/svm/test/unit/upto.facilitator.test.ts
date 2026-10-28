@@ -75,7 +75,11 @@ import {
   type PaymentChannelRecord,
   type PaymentChannelStorage,
 } from "../../src/payment-channels/storage";
-import { UptoSvmRentCleanupManager } from "../../src/upto/facilitator/rentCleanupManager";
+import {
+  DEFAULT_FACILITATOR_TRANSACTION_VERSION,
+  resolveFacilitatorTransactionVersion,
+  UptoSvmRentCleanupManager,
+} from "../../src/upto/facilitator/rentCleanupManager";
 import type { UptoSvmPayloadV2 } from "../../src/types";
 import { challengeExpiresAt, MAX_TIMEOUT_SECONDS } from "./upto.testUtils";
 
@@ -93,6 +97,34 @@ function channelStorage(overrides: Partial<PaymentChannelStorage> = {}): Payment
     ...overrides,
   };
 }
+
+describe("facilitatorTransactionVersion", () => {
+  it("defaults an unset version to v1 and passes 0 or 1 through", () => {
+    expect(resolveFacilitatorTransactionVersion(undefined)).toBe(
+      DEFAULT_FACILITATOR_TRANSACTION_VERSION,
+    );
+    expect(resolveFacilitatorTransactionVersion(0)).toBe(0);
+    expect(resolveFacilitatorTransactionVersion(1)).toBe(1);
+  });
+
+  it.each([-1, 2, 3])("throws at construction for invalid version %d", async version => {
+    const feePayer = await generateKeyPairSigner();
+    const signer = toFacilitatorSvmSigner(feePayer);
+
+    expect(
+      () => new UptoSvmScheme(signer, { facilitatorTransactionVersion: version as never }),
+    ).toThrow("facilitatorTransactionVersion must be 0 or 1");
+    expect(
+      () =>
+        new UptoSvmRentCleanupManager({
+          facilitatorTransactionVersion: version as never,
+          network: SOLANA_DEVNET_CAIP2,
+          signer,
+          storage: new InMemoryPaymentChannelStorage(),
+        }),
+    ).toThrow("facilitatorTransactionVersion must be 0 or 1");
+  });
+});
 
 describe("UptoSvmScheme facilitator channel lifecycle", () => {
   beforeEach(() => {
@@ -227,6 +259,41 @@ describe("UptoSvmScheme facilitator channel lifecycle", () => {
       }),
     );
   });
+
+  it.each([
+    ["unset defaults to v1", undefined, 1],
+    ["explicit v1", 1, 1],
+    ["explicit v0", 0, 0],
+  ] as const)(
+    "claim settle honours the configured facilitator transaction version: %s",
+    async (_name, facilitatorTransactionVersion, wantVersion) => {
+      const { facilitator, payload, requirements, receiverAuthorizer, uptoPayload } =
+        await buildFixture({ facilitatorTransactionVersion });
+
+      const voucherSignature = await signVoucher(receiverAuthorizer, {
+        channelId: uptoPayload.channelId,
+        cumulativeAmount: 0n,
+        expiresAt: BigInt(uptoPayload.expiresAt),
+      });
+      await expect(
+        facilitator.settle(
+          {
+            ...payload,
+            payload: { ...uptoPayload, voucherSignature },
+          },
+          { ...requirements, amount: "0" },
+        ),
+      ).resolves.toMatchObject({ success: true });
+
+      expect(channelMocks.submitChannelTransactionWithSigner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        SOLANA_DEVNET_CAIP2,
+        expect.anything(),
+        expect.objectContaining({ facilitatorTransactionVersion: wantVersion }),
+      );
+    },
+  );
 
   it("passes the configured channel-read policy through to fetchAndVerifyOpenChannel", async () => {
     const { facilitator, payload, requirements, receiverAuthorizer, uptoPayload } =

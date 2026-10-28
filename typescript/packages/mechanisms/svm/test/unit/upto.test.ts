@@ -2573,7 +2573,7 @@ describe("upto SVM scheme", () => {
         signer as never,
         SOLANA_DEVNET_CAIP2,
         [memoIx],
-        { useTransactionV1: true },
+        { facilitatorTransactionVersion: 1 },
       );
       expect(signature).toBe(SIG);
       expect(simulateTransaction).toHaveBeenCalledTimes(1);
@@ -2601,7 +2601,7 @@ describe("upto SVM scheme", () => {
 
       await expect(
         submitSettle(feePayer, signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
-          useTransactionV1: true,
+          facilitatorTransactionVersion: 1,
         }),
       ).rejects.toThrow(TransactionOnchainFailureError);
       expect(sendTransaction).toHaveBeenCalledTimes(1);
@@ -2614,7 +2614,7 @@ describe("upto SVM scheme", () => {
 
       await expect(
         submitSettle(feePayer, signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
-          useTransactionV1: true,
+          facilitatorTransactionVersion: 1,
         }),
       ).rejects.toBeInstanceOf(SettlementConfirmationTimeoutError);
     });
@@ -2626,7 +2626,7 @@ describe("upto SVM scheme", () => {
 
       await expect(
         submitSettle(feePayer, signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
-          useTransactionV1: true,
+          facilitatorTransactionVersion: 1,
         }),
       ).rejects.toThrow("sim failed");
       expect(sendTransaction).not.toHaveBeenCalled();
@@ -2638,7 +2638,7 @@ describe("upto SVM scheme", () => {
 
       await submitSettle(feePayer, signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
         computeUnitLimit: 222_222,
-        useTransactionV1: true,
+        facilitatorTransactionVersion: 1,
       });
 
       const wire = sendTransaction.mock.calls[0]![0] as string;
@@ -2650,7 +2650,7 @@ describe("upto SVM scheme", () => {
       const priced = makeSettleSigner();
       await submitSettle(feePayer, priced.signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
         computeUnitPriceMicroLamports: 250,
-        useTransactionV1: true,
+        facilitatorTransactionVersion: 1,
       });
       const pricedConfig = decodeV1Config(priced.sendTransaction.mock.calls[0]![0]);
       expect(pricedConfig.priorityFeeLamports).toBe(25n);
@@ -2658,7 +2658,7 @@ describe("upto SVM scheme", () => {
       const unpriced = makeSettleSigner();
       await submitSettle(feePayer, unpriced.signer as never, SOLANA_DEVNET_CAIP2, [memoIx], {
         computeUnitPriceMicroLamports: 0,
-        useTransactionV1: true,
+        facilitatorTransactionVersion: 1,
       });
       const unpricedWire = unpriced.sendTransaction.mock.calls[0]![0];
       expect(decodeTopLevelInstructions(unpricedWire).map(ix => ix.program)).toEqual([

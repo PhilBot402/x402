@@ -6,6 +6,7 @@
 
 import type { Network } from "@x402/core/types";
 
+import type { FacilitatorTransactionVersion } from "../../payment-channels/facilitator";
 import {
   PaymentChannelRentCleanupManager,
   type PaymentChannelRentCleanupManagerConfig,
@@ -31,6 +32,25 @@ export type {
   RentDiscoveryResult,
 } from "../../payment-channels/rentCleanup";
 
+/** Used when `facilitatorTransactionVersion` is unset. */
+export const DEFAULT_FACILITATOR_TRANSACTION_VERSION: FacilitatorTransactionVersion = 1;
+
+/**
+ * Apply the default to an unset version and throw on anything but 0 or 1.
+ *
+ * @param version - Configured facilitator transaction version, if any
+ * @returns The version the facilitator builds its own transactions with
+ */
+export function resolveFacilitatorTransactionVersion(
+  version: FacilitatorTransactionVersion | undefined,
+): FacilitatorTransactionVersion {
+  if (version === undefined) return DEFAULT_FACILITATOR_TRANSACTION_VERSION;
+  if (version !== 0 && version !== 1) {
+    throw new Error(`facilitatorTransactionVersion must be 0 or 1, received ${String(version)}`);
+  }
+  return version;
+}
+
 /** Configuration for {@link UptoSvmRentCleanupManager}. */
 export interface UptoSvmRentCleanupManagerConfig {
   signer: FacilitatorSvmSigner;
@@ -55,6 +75,12 @@ export interface UptoSvmRentCleanupManagerConfig {
    * transactions. Defaults to 4 MiB; reclaim batches derive their own limit.
    */
   settleLoadedAccountsDataSizeLimit?: number;
+  /**
+   * Message version (0 or 1) of the cleanup transactions the facilitator
+   * builds itself; see `UptoSvmFacilitatorConfig.facilitatorTransactionVersion`.
+   * v0 caps reclaim batches at `MAX_SAFE_RECLAIMS_PER_TX`. Defaults to 1.
+   */
+  facilitatorTransactionVersion?: FacilitatorTransactionVersion;
 }
 
 /**
@@ -76,7 +102,9 @@ export class UptoSvmRentCleanupManager extends PaymentChannelRentCleanupManager 
       abandonPolicy: "expiry",
       label: "UptoSvmRentCleanupManager",
       sealClosingChannels: false,
-      useTransactionV1: true,
+      facilitatorTransactionVersion: resolveFacilitatorTransactionVersion(
+        config.facilitatorTransactionVersion,
+      ),
     };
     super(shared);
   }

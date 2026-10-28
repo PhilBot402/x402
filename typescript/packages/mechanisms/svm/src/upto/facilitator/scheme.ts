@@ -37,6 +37,7 @@ import {
   submitChannelTransactionWithSigner,
   type ChannelReadPolicy,
   type ChannelRpc,
+  type FacilitatorTransactionVersion,
   type PaymentChannelSvmSigner,
 } from "../../payment-channels/facilitator";
 import {
@@ -69,7 +70,10 @@ import {
   type PaymentChannelStorage,
 } from "../../payment-channels/storage";
 import { resolveUptoSvmPaymentChannelConfig, type UptoSvmPaymentChannelConfig } from "../shared";
-import { UptoSvmRentCleanupManager } from "./rentCleanupManager";
+import {
+  resolveFacilitatorTransactionVersion,
+  UptoSvmRentCleanupManager,
+} from "./rentCleanupManager";
 
 /** Scheme-specific error returned when the settlement amount exceeds the ceiling. */
 export const ERR_SETTLEMENT_EXCEEDS_AMOUNT = "invalid_upto_svm_payload_settlement_exceeds_amount";
@@ -227,6 +231,14 @@ export interface UptoSvmFacilitatorConfig {
    */
   settleLoadedAccountsDataSizeLimit?: number;
   /**
+   * Message version (0 or 1) of the claim, cancel, and rent-cleanup
+   * transactions the facilitator builds and signs itself. It does not affect
+   * which client-built versions are accepted. Any other value throws.
+   *
+   * Default: `DEFAULT_FACILITATOR_TRANSACTION_VERSION` (1)
+   */
+  facilitatorTransactionVersion?: FacilitatorTransactionVersion;
+  /**
    * Lets a retried deposit (open) or claim (settle_and_seal + distribute)
    * settle for the same channel reconcile against an already-broadcast
    * signature instead of re-broadcasting (see {@link PendingSettlementStore}).
@@ -332,6 +344,7 @@ export class UptoSvmScheme implements SchemeNetworkFacilitator {
     assertLimit("computeUnitPriceMicroLamports", config.computeUnitPriceMicroLamports, 0);
     assertLimit("settleComputeUnitLimit", config.settleComputeUnitLimit, 1);
     assertLimit("settleLoadedAccountsDataSizeLimit", config.settleLoadedAccountsDataSizeLimit, 1);
+    resolveFacilitatorTransactionVersion(config.facilitatorTransactionVersion);
     assertPaymentChannelFacilitatorSigner(signer, "UptoSvmScheme");
     this.signer = signer;
     this.getKitSigner = signer.getSigner.bind(signer);
@@ -382,6 +395,7 @@ export class UptoSvmScheme implements SchemeNetworkFacilitator {
       network,
       settleComputeUnitLimit: this.config.settleComputeUnitLimit,
       settleLoadedAccountsDataSizeLimit: this.config.settleLoadedAccountsDataSizeLimit,
+      facilitatorTransactionVersion: this.config.facilitatorTransactionVersion,
       signer: cleanupSigner,
       storage: this.channelStorage,
     });
@@ -1091,7 +1105,9 @@ export class UptoSvmScheme implements SchemeNetworkFacilitator {
           computeUnitLimit: this.config.settleComputeUnitLimit,
           loadedAccountsDataSizeLimit: this.config.settleLoadedAccountsDataSizeLimit,
           computeUnitPriceMicroLamports: this.config.computeUnitPriceMicroLamports,
-          useTransactionV1: true,
+          facilitatorTransactionVersion: resolveFacilitatorTransactionVersion(
+            this.config.facilitatorTransactionVersion,
+          ),
           latestBlockhash: prefetchedBlockhash,
         },
       );
