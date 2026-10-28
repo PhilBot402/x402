@@ -13,7 +13,7 @@
 
 Depend on zod ^4.6.6 so GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404) is fixed. There is no patched zod 3.x.
 
-`PaymentRequired` `accepts`, and the legacy `x402Response` and discovered-resource `accepts` arrays, now reject more than 1024 entries.
+`PaymentRequired` `accepts`, the legacy `x402Response` and discovered-resource `accepts` arrays, legacy discovery `items`, legacy supported `kinds`, and SIWX `resources` now reject more than 1024 entries.
 
 Inferred payment object types are unchanged. The re-exported `z`, schema classes, and `parsePaymentRequired` / `parsePaymentRequirements` / `parsePaymentPayload` results are zod 4. Code that passed those schemas into a zod 3 API, or read `ZodError.errors`, needs zod 4 (use `.issues`).
 
