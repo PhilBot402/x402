@@ -4,7 +4,7 @@ import type { Network } from "@x402/core/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SOLANA_DEVNET_CAIP2, TOKEN_PROGRAM_ADDRESS } from "../../src/constants";
-import { USDC_DEVNET_ADDRESS } from "../../src/defaultAssets";
+import { USDC_DEVNET_ADDRESS, USDC_MAINNET_ADDRESS } from "../../src/defaultAssets";
 import {
   buildReclaimInstruction,
   ChannelStatus,
@@ -23,6 +23,7 @@ import {
   UptoSvmRentCleanupManager,
 } from "../../src/upto/facilitator/rentCleanupManager";
 import { UptoSvmScheme } from "../../src/upto/facilitator/scheme";
+import { peekWireTransactionVersion } from "../../src/utils";
 
 const NETWORK = SOLANA_DEVNET_CAIP2 as Network;
 
@@ -427,10 +428,25 @@ describe("UptoSvmRentCleanupManager — cleanup", () => {
     ["unset defaults to v1", undefined, 1],
     ["explicit v0", 0, 0],
   ] as const)(
-    "honours the configured facilitator transaction version: %s",
+    "builds the configured facilitator transaction version: %s",
     async (_name, facilitatorTransactionVersion, wantVersion) => {
+      const actual = await vi.importActual<typeof import("../../src/payment-channels/facilitator")>(
+        "../../src/payment-channels/facilitator",
+      );
+      submitSettleMock.mockImplementation(actual.submitChannelTransactionWithSigner);
+      const sendTransaction = vi.fn().mockResolvedValue(USDC_MAINNET_ADDRESS);
+      const signer = {
+        ...toFacilitatorSvmSigner(feePayer),
+        getLatestBlockhash: async () => ({
+          blockhash: USDC_MAINNET_ADDRESS,
+          lastValidBlockHeight: 1n,
+        }),
+        simulateTransaction: vi.fn().mockResolvedValue(undefined),
+        sendTransaction,
+        confirmTransaction: vi.fn().mockResolvedValue(undefined),
+      };
       // Built via the scheme to cover config.facilitatorTransactionVersion propagation.
-      manager = new UptoSvmScheme(toFacilitatorSvmSigner(feePayer), {
+      manager = new UptoSvmScheme(signer, {
         channelStorage: storage,
         facilitatorTransactionVersion,
       }).createRentCleanupManager(NETWORK);
@@ -444,10 +460,8 @@ describe("UptoSvmRentCleanupManager — cleanup", () => {
       await manager.cleanup({ maxTxsPerSigner: 1, onError });
 
       expect(onError).not.toHaveBeenCalled();
-      expect(submitSettleMock).toHaveBeenCalledTimes(1);
-      expect(submitSettleMock.mock.calls[0]![4].facilitatorTransactionVersion ?? 0).toBe(
-        wantVersion,
-      );
+      expect(sendTransaction).toHaveBeenCalledOnce();
+      expect(peekWireTransactionVersion(sendTransaction.mock.calls[0]![0])).toBe(wantVersion);
     },
   );
 

@@ -59,7 +59,8 @@ export interface UptoSvmRentCleanupManagerConfig {
   /**
    * `SetComputeUnitPrice` (microlamports per compute unit) attached to cleanup
    * transactions; `0` omits the instruction. Defaults to
-   * `DEFAULT_COMPUTE_UNIT_PRICE_MICROLAMPORTS` (1).
+   * `DEFAULT_COMPUTE_UNIT_PRICE_MICROLAMPORTS` (1). Under v1 it is converted to
+   * the inline total priority fee.
    */
   computeUnitPriceMicroLamports?: number;
   /**
@@ -67,12 +68,14 @@ export interface UptoSvmRentCleanupManagerConfig {
    * to `DEFAULT_SETTLE_COMPUTE_UNIT_LIMIT` (100k, standard SPL Token
    * settlement); raise it for compute-heavy Token-2022 extension mints.
    * Reclaim batches instead derive their limit per channel
-   * (`reclaimComputeUnitLimit`) and are mint-independent.
+   * (`reclaimComputeUnitLimit`) and are mint-independent. Under v1 it is the
+   * inline compute-unit limit.
    */
   settleComputeUnitLimit?: number;
   /**
    * Inline v1 loaded-account-data budget for close/distribute cleanup
    * transactions. Defaults to 4 MiB; reclaim batches derive their own limit.
+   * Ignored under v0, which has no loaded-account-data instruction.
    */
   settleLoadedAccountsDataSizeLimit?: number;
   /**

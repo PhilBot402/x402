@@ -81,6 +81,7 @@ import {
   UptoSvmRentCleanupManager,
 } from "../../src/upto/facilitator/rentCleanupManager";
 import type { UptoSvmPayloadV2 } from "../../src/types";
+import { peekWireTransactionVersion } from "../../src/utils";
 import { challengeExpiresAt, MAX_TIMEOUT_SECONDS } from "./upto.testUtils";
 
 const OPEN_SLOT = 123_456_789n;
@@ -199,7 +200,7 @@ describe("UptoSvmScheme facilitator channel lifecycle", () => {
       splits: [{ bps: 10_000, recipient: receiverAuthorizer.address }],
     });
     const facilitator = new UptoSvmScheme(toFacilitatorSvmSigner(feePayer), config);
-    return { facilitator, payload, requirements, receiverAuthorizer, uptoPayload };
+    return { facilitator, feePayer, payload, requirements, receiverAuthorizer, uptoPayload };
   }
 
   it("settles without a prior verify on the same instance when the channel is open", async () => {
@@ -265,10 +266,28 @@ describe("UptoSvmScheme facilitator channel lifecycle", () => {
     ["explicit v1", 1, 1],
     ["explicit v0", 0, 0],
   ] as const)(
-    "claim settle honours the configured facilitator transaction version: %s",
+    "claim settle builds the configured facilitator transaction version: %s",
     async (_name, facilitatorTransactionVersion, wantVersion) => {
-      const { facilitator, payload, requirements, receiverAuthorizer, uptoPayload } =
-        await buildFixture({ facilitatorTransactionVersion });
+      const { feePayer, payload, requirements, receiverAuthorizer, uptoPayload } =
+        await buildFixture();
+      const actual = await vi.importActual<typeof import("../../src/payment-channels/facilitator")>(
+        "../../src/payment-channels/facilitator",
+      );
+      channelMocks.submitChannelTransactionWithSigner.mockImplementation(
+        actual.submitChannelTransactionWithSigner,
+      );
+      const sendTransaction = vi.fn().mockResolvedValue(USDC_MAINNET_ADDRESS);
+      const signer = {
+        ...toFacilitatorSvmSigner(feePayer),
+        getLatestBlockhash: async () => ({
+          blockhash: USDC_MAINNET_ADDRESS,
+          lastValidBlockHeight: 1n,
+        }),
+        simulateTransaction: vi.fn().mockResolvedValue(undefined),
+        sendTransaction,
+        confirmTransaction: vi.fn().mockResolvedValue(undefined),
+      };
+      const facilitator = new UptoSvmScheme(signer, { facilitatorTransactionVersion });
 
       const voucherSignature = await signVoucher(receiverAuthorizer, {
         channelId: uptoPayload.channelId,
@@ -285,13 +304,8 @@ describe("UptoSvmScheme facilitator channel lifecycle", () => {
         ),
       ).resolves.toMatchObject({ success: true });
 
-      expect(channelMocks.submitChannelTransactionWithSigner).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        SOLANA_DEVNET_CAIP2,
-        expect.anything(),
-        expect.objectContaining({ facilitatorTransactionVersion: wantVersion }),
-      );
+      expect(sendTransaction).toHaveBeenCalledOnce();
+      expect(peekWireTransactionVersion(sendTransaction.mock.calls[0]![0])).toBe(wantVersion);
     },
   );
 

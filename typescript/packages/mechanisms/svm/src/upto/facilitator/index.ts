@@ -13,6 +13,7 @@ export {
   UptoSvmScheme,
 } from "./scheme";
 export type { UptoDelegatedSettleContext, UptoSvmFacilitatorConfig } from "./scheme";
+export type { FacilitatorTransactionVersion } from "../../payment-channels/facilitator";
 export { ErrSettlementPending } from "../../exact/facilitator/errors";
 export {
   ChannelBroadcastConfirmationError as ChannelOpenConfirmationError,
