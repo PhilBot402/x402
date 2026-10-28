@@ -1123,7 +1123,6 @@ describe("ExactEvmScheme (Facilitator)", () => {
       mockFacilitatorSigner.getCode = vi
         .fn()
         .mockImplementation(mockGetCodeEOAPayer("0x036CbD53842c5426634e7929541eC2318f3dCF7e"));
-      // As on chain: the factory call with empty calldata fails, the transfer succeeds.
       mockFacilitatorSigner.readContract = rcWithSig(({ address }: { address: string }) => {
         if (address === MULTICALL3_ADDRESS) {
           return Promise.resolve([
