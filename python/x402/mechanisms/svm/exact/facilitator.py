@@ -36,6 +36,8 @@ from ..constants import (
     ERR_MINT_MISMATCH,
     ERR_NETWORK_MISMATCH,
     ERR_NO_TRANSFER_INSTRUCTION,
+    ERR_RECIPIENT_ATA_MISSING,
+    ERR_RECIPIENT_ATA_WRONG_PROGRAM_OWNER,
     ERR_RECIPIENT_MISMATCH,
     ERR_SETTLEMENT_PENDING,
     ERR_SIMULATION_FAILED,
@@ -54,7 +56,7 @@ from ..constants import (
     TOKEN_PROGRAM_ADDRESS,
 )
 from ..settlement_cache import SettlementCache
-from ..signer import FacilitatorSvmSigner
+from ..signer import FacilitatorSvmSigner, FacilitatorSvmSignerWithGetAccountInfo
 from ..types import ExactSvmPayload
 from ..utils import (
     decode_transaction_from_payload,
@@ -64,6 +66,7 @@ from ..utils import (
     is_accepted_transaction_version,
     peek_wire_transaction_version,
     transaction_message_hash,
+    validate_svm_address,
 )
 
 
@@ -377,15 +380,44 @@ class ExactSvmScheme:
             fully_signed_tx = self._signer.sign_transaction(
                 svm_payload.transaction, fee_payer_str, network
             )
+        except Exception as e:
+            return VerifyResponse(
+                is_valid=False,
+                invalid_reason=ERR_SIMULATION_FAILED,
+                invalid_message=str(e),
+                payer=payer,
+            )
 
+        try:
             # Simulate to verify transaction would succeed
             self._signer.simulate_transaction(fully_signed_tx, network)
         except Exception as e:
             error_msg = str(e)
+            invalid_reason = ERR_SIMULATION_FAILED
+            invalid_message = error_msg
+            if isinstance(self._signer, FacilitatorSvmSignerWithGetAccountInfo):
+                try:
+                    owner = self._signer.get_account_info(str(dest_ata), network)
+                except Exception:
+                    pass
+                else:
+                    destination = str(dest_ata)
+                    if owner is None:
+                        invalid_reason = ERR_RECIPIENT_ATA_MISSING
+                        invalid_message = (
+                            f"{error_msg}; recipient ATA {destination} was not found "
+                            "during diagnostic lookup"
+                        )
+                    elif validate_svm_address(owner) and owner != transfer_program_str:
+                        invalid_reason = ERR_RECIPIENT_ATA_WRONG_PROGRAM_OWNER
+                        invalid_message = (
+                            f"{error_msg}; recipient ATA {destination} has program "
+                            f"owner {owner}, expected {transfer_program_str}"
+                        )
             return VerifyResponse(
                 is_valid=False,
-                invalid_reason=ERR_SIMULATION_FAILED,
-                invalid_message=error_msg,
+                invalid_reason=invalid_reason,
+                invalid_message=invalid_message,
                 payer=payer,
             )
 
@@ -474,6 +506,7 @@ class ExactSvmScheme:
             return SettleResponse(
                 success=False,
                 error_reason=verify_result.invalid_reason,
+                error_message=verify_result.invalid_message,
                 network=network,
                 payer=verify_result.payer,
                 transaction="",
