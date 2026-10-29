@@ -246,7 +246,7 @@ function permit2AuthorizationMessage(authorization: unknown): string | undefined
  */
 export function validateEip3009Payload(payload: unknown): string | undefined {
   if (!isRecord(payload)) {
-    return "authorization must be an object";
+    return "payload must be an object";
   }
   return signatureMessage(payload) ?? eip3009AuthorizationMessage(payload.authorization);
 }
@@ -259,7 +259,7 @@ export function validateEip3009Payload(payload: unknown): string | undefined {
  */
 export function validateExactEvmPayload(payload: unknown): string | undefined {
   if (!isRecord(payload)) {
-    return "authorization must be an object";
+    return "payload must be an object";
   }
   if (hasPermit2Authorization(payload)) {
     return signatureMessage(payload) ?? permit2AuthorizationMessage(payload.permit2Authorization);
