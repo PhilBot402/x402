@@ -618,6 +618,11 @@ func compileChannelTransaction(
 ) (*solana.Transaction, error) {
 	switch opts.FacilitatorTransactionVersion {
 	case FacilitatorTransactionVersion0:
+		budget, err := buildSettleComputeBudget(opts)
+		if err != nil {
+			return nil, err
+		}
+		return buildSignedTransaction(ctx, feePayer, feePayerKey, network, blockhash, append(budget, instructions...))
 	case FacilitatorTransactionVersion1:
 		tx, err := buildSettleTransaction(feePayerKey, blockhash, instructions, opts)
 		if err != nil {
@@ -630,11 +635,6 @@ func compileChannelTransaction(
 	default:
 		return nil, fmt.Errorf("unsupported facilitator transaction version %d", opts.FacilitatorTransactionVersion)
 	}
-	budget, err := buildSettleComputeBudget(opts)
-	if err != nil {
-		return nil, err
-	}
-	return buildSignedTransaction(ctx, feePayer, feePayerKey, network, blockhash, append(budget, instructions...))
 }
 
 func buildSettleComputeBudget(opts SubmitSettleOptions) ([]solana.Instruction, error) {
