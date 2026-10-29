@@ -5,7 +5,12 @@ import type {
   ExactEIP3009Payload,
   ExactPermit2Payload,
 } from "../../src/types";
-import { isPermit2Payload, isEIP3009Payload, validateExactEvmPayload } from "../../src/types";
+import {
+  isPermit2Payload,
+  isEIP3009Payload,
+  validateEip3009Payload,
+  validateExactEvmPayload,
+} from "../../src/types";
 
 describe("EVM Types", () => {
   describe("ExactEvmPayloadV1", () => {
@@ -169,5 +174,12 @@ describe("validateExactEvmPayload", () => {
 
   it("accepts a nonce without a 0x prefix", () => {
     expect(validateExactEvmPayload(eip3009({ nonce: "ab".repeat(32) }))).toBeUndefined();
+  });
+
+  it("names a non-object root as the payload", () => {
+    for (const root of ["not-an-object", null, []]) {
+      expect(validateExactEvmPayload(root)).toBe("payload must be an object");
+      expect(validateEip3009Payload(root)).toBe("payload must be an object");
+    }
   });
 });
