@@ -28,7 +28,15 @@ export function decodePaymentSignatureHeader(paymentSignatureHeader: string): Pa
   if (!Base64EncodedRegex.test(paymentSignatureHeader)) {
     throw new Error("Invalid payment signature header");
   }
-  return JSON.parse(safeBase64Decode(paymentSignatureHeader)) as PaymentPayload;
+  const paymentPayload = JSON.parse(safeBase64Decode(paymentSignatureHeader));
+  if (
+    typeof paymentPayload !== "object" ||
+    paymentPayload === null ||
+    Array.isArray(paymentPayload)
+  ) {
+    throw new Error("Payment signature header must decode to a JSON object");
+  }
+  return paymentPayload as PaymentPayload;
 }
 
 /**
@@ -51,7 +59,15 @@ export function decodePaymentRequiredHeader(paymentRequiredHeader: string): Paym
   if (!Base64EncodedRegex.test(paymentRequiredHeader)) {
     throw new Error("Invalid payment required header");
   }
-  return JSON.parse(safeBase64Decode(paymentRequiredHeader)) as PaymentRequired;
+  const paymentRequired = JSON.parse(safeBase64Decode(paymentRequiredHeader));
+  if (
+    typeof paymentRequired !== "object" ||
+    paymentRequired === null ||
+    Array.isArray(paymentRequired)
+  ) {
+    throw new Error("Payment required header must decode to a JSON object");
+  }
+  return paymentRequired as PaymentRequired;
 }
 
 /**
@@ -77,7 +93,15 @@ export function decodePaymentResponseHeader(paymentResponseHeader: string): Sett
   if (!Base64EncodedRegex.test(paymentResponseHeader)) {
     throw new Error("Invalid payment response header");
   }
-  return JSON.parse(safeBase64Decode(paymentResponseHeader)) as SettleResponse;
+  const paymentResponse = JSON.parse(safeBase64Decode(paymentResponseHeader));
+  if (
+    typeof paymentResponse !== "object" ||
+    paymentResponse === null ||
+    Array.isArray(paymentResponse)
+  ) {
+    throw new Error("Payment response header must decode to a JSON object");
+  }
+  return paymentResponse as SettleResponse;
 }
 
 export {
