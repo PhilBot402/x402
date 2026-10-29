@@ -1,4 +1,4 @@
-import { isAddress } from "viem";
+import { getAddress } from "viem";
 
 /**
  * Asset transfer methods for the exact EVM scheme.
@@ -69,7 +69,7 @@ export type ExactEvmPayloadV2 = ExactEIP3009Payload | ExactPermit2Payload;
  * @returns True if the payload is a Permit2 payload, false otherwise.
  */
 export function isPermit2Payload(payload: ExactEvmPayloadV2): payload is ExactPermit2Payload {
-  return "permit2Authorization" in payload;
+  return hasPermit2Authorization(payload);
 }
 
 /**
@@ -112,7 +112,7 @@ function uint256Message(path: string, value: unknown): string | undefined {
 }
 
 /**
- * Require a string address. `strict: false` matches `getAddress`.
+ * Require a string address.
  *
  * @param path - Field path named in the message
  * @param value - Candidate address field
@@ -122,15 +122,26 @@ function addressMessage(path: string, value: unknown): string | undefined {
   if (typeof value !== "string") {
     return `${path} must be a string`;
   }
-  if (!isAddress(value, { strict: false })) {
+  try {
+    getAddress(value);
+  } catch {
     return `${path} must be an address`;
   }
   return undefined;
 }
 
 /**
- * `parseErc6492Signature` throws when `signature` is not a string, and that
- * call happens after an `eth_getCode` lookup. Reject it here.
+ * True when the raw payload carries a Permit2 authorization.
+ *
+ * @param payload - Raw object
+ * @returns Whether `permit2Authorization` is present
+ */
+function hasPermit2Authorization(payload: object): boolean {
+  return "permit2Authorization" in payload;
+}
+
+/**
+ * Require a string signature.
  *
  * @param payload - Raw payload object
  * @returns A field message, or undefined when `signature` is a string
@@ -243,8 +254,6 @@ export function validateEip3009Payload(payload: unknown): string | undefined {
 /**
  * Check that a raw exact EVM payload has the field types verify and settle parse.
  *
- * Permit2 and EIP-3009 payloads are told apart the same way verify and settle route them.
- *
  * @param payload - Raw payload
  * @returns Undefined if well-formed, otherwise a message naming the first malformed field
  */
@@ -252,7 +261,7 @@ export function validateExactEvmPayload(payload: unknown): string | undefined {
   if (!isRecord(payload)) {
     return "authorization must be an object";
   }
-  if ("permit2Authorization" in payload) {
+  if (hasPermit2Authorization(payload)) {
     return signatureMessage(payload) ?? permit2AuthorizationMessage(payload.permit2Authorization);
   }
   return validateEip3009Payload(payload);
@@ -268,7 +277,7 @@ export function getExactEvmPayloadPayer(payload: unknown): string | undefined {
   if (!isRecord(payload)) {
     return undefined;
   }
-  const key = "permit2Authorization" in payload ? "permit2Authorization" : "authorization";
+  const key = hasPermit2Authorization(payload) ? "permit2Authorization" : "authorization";
   const authorization = payload[key];
   if (!isRecord(authorization) || typeof authorization.from !== "string") {
     return undefined;

@@ -853,7 +853,6 @@ describe("ExactEvmScheme (Facilitator)", () => {
         resource: { url: "", description: "", mimeType: "" },
       };
 
-      // EOA payer so the bad signature is checked with ecrecover, not the ERC-1271 mock.
       mockFacilitatorSigner.getCode = vi.fn().mockResolvedValue("0x");
       mockFacilitatorSigner.verifyTypedData = vi.fn().mockResolvedValue(false);
 
