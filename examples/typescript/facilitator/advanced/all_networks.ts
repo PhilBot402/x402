@@ -89,10 +89,8 @@ import { baseSepolia } from "viem/chains";
 
 dotenv.config();
 
-// Configuration
 const PORT = process.env.PORT || "4022";
 
-// Configuration - optional per network (alphabetic order)
 const avmPrivateKey = process.env.AVM_PRIVATE_KEY as string | undefined;
 const cardanoMnemonic = process.env.CARDANO_MNEMONIC as string | undefined;
 const cardanoNetwork = (process.env.CARDANO_NETWORK ||
@@ -148,7 +146,6 @@ const hederaPrivateKey = process.env.HEDERA_PRIVATE_KEY;
 const xrplNetwork = process.env.XRPL_NETWORK || XRPL_TESTNET;
 const xrplWsUrl = process.env.XRPL_WS_URL as string | undefined;
 
-// Validate at least one private key is provided
 if (
   !avmPrivateKey &&
   !cardanoMnemonic &&
@@ -170,7 +167,6 @@ if (
   process.exit(1);
 }
 
-// Network configuration (alphabetic order)
 const AVM_NETWORK = "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDe"; // Algorand Testnet
 const CARDANO_NETWORK = cardanoNetwork; // Cardano Preprod Testnet (default)
 const APTOS_NETWORK = (process.env.APTOS_NETWORK || "aptos:2") as Network; // Aptos Testnet
@@ -190,7 +186,6 @@ const STELLAR_NETWORK = "stellar:testnet"; // Stellar Testnet
 const TVM_NETWORK = (process.env.TVM_NETWORK || "tvm:-3") as Network; // TON Testnet
 const XRPL_NETWORK = xrplNetwork as Network; // XRPL Testnet
 
-// Initialize the x402 Facilitator
 const facilitator = new x402Facilitator()
   .onBeforeVerify(async (context) => {
     console.log("Before verify", context);
@@ -604,7 +599,6 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Start the server
 let server = app.listen(parseInt(PORT), () => {
   console.log(
     `🚀 All Networks Facilitator listening on http://localhost:${PORT}`,

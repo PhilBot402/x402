@@ -57,7 +57,6 @@ import * as KeetaNet from "@keetanetwork/keetanet-client";
 
 config();
 
-// Configuration - optional per network
 const avmPrivateKey = process.env.AVM_PRIVATE_KEY as string | undefined;
 const cardanoMnemonic = process.env.CARDANO_MNEMONIC as string | undefined;
 const cardanoNetwork = process.env.CARDANO_NETWORK || "cardano:preprod";
@@ -136,7 +135,6 @@ function parseTvmKeyPair(privateKey: string): KeyPair {
  * Schemes are registered directly for networks where private keys are provided.
  */
 async function main(): Promise<void> {
-  // Validate at least one private key is provided
   if (
     !avmPrivateKey &&
     !cardanoMnemonic &&
@@ -326,7 +324,6 @@ async function main(): Promise<void> {
 
   console.log(`\nMaking request to: ${url}\n`);
 
-  // Make the request
   const response = await fetchWithPayment(url, { method: "GET" });
   const body = await response.json();
   console.log("Response body:", body);

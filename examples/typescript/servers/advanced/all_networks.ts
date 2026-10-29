@@ -35,7 +35,6 @@ import type { Network, Price } from "@x402/core/types";
 
 config();
 
-// Configuration - optional per network
 const avmAddress = process.env.AVM_ADDRESS as string | undefined;
 const cardanoAddress = process.env.CARDANO_ADDRESS as string | undefined;
 const aptosAddress = process.env.APTOS_ADDRESS as string | undefined;
@@ -56,7 +55,6 @@ const stellarAddress = process.env.STELLAR_ADDRESS as string | undefined;
 const tvmAddress = process.env.TVM_ADDRESS as string | undefined;
 const xrplAddress = process.env.XRPL_ADDRESS as string | undefined;
 
-// Validate at least one address is provided
 if (
   !avmAddress &&
   !cardanoAddress &&
@@ -85,7 +83,6 @@ if (!facilitatorUrl) {
   process.exit(1);
 }
 
-// Network configuration
 const AVM_NETWORK = (process.env.AVM_NETWORK || ALGORAND_TESTNET_CAIP2) as Network; // Algorand Testnet
 const CARDANO_NETWORK = "cardano:preprod" as const; // Cardano Preprod Testnet
 const APTOS_NETWORK = (process.env.APTOS_NETWORK || APTOS_TESTNET_CAIP2) as Network; // Aptos Testnet
@@ -111,7 +108,6 @@ const TVM_NETWORK = (process.env.TVM_NETWORK || "tvm:-3") as Network; // TON Tes
 const XRPL_NETWORK = (process.env.XRPL_NETWORK || XRPL_TESTNET) as Network; // XRPL Testnet
 const CCD_WEATHER_PRICE_MICRO_CCD = "1000" as const; // 0.001 CCD
 
-// Build accepts array dynamically based on configured addresses
 const accepts: Array<{
   scheme: string;
   price: Price;
@@ -264,10 +260,8 @@ if (xrplAddress) {
   });
 }
 
-// Create facilitator client
 const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
 
-// Create x402 resource server and register schemes dynamically
 const server = new x402ResourceServer(facilitatorClient);
 if (avmAddress) {
   server.register(AVM_NETWORK, new ExactAvmScheme());
@@ -312,10 +306,8 @@ if (xrplAddress) {
   server.register(XRPL_NETWORK, new ExactXrplScheme());
 }
 
-// Create Express app
 const app = express();
 
-// Apply payment middleware
 app.use(
   paymentMiddleware(
     {
@@ -344,7 +336,6 @@ app.get("/health", (req, res) => {
   res.send({ status: "ok" });
 });
 
-// Start server
 const port = process.env.PORT || 4021;
 app.listen(port, () => {
   console.log(`🚀 All Networks Server listening at http://localhost:${port}`);
