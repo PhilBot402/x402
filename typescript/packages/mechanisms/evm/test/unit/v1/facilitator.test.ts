@@ -96,6 +96,7 @@ describe("ExactEvmSchemeV1", () => {
         scheme: "wrong",
         network: "base-sepolia",
         payload: {
+          signature: "0x00",
           authorization: {
             from: "0x1234567890123456789012345678901234567890",
             to: "0x9876543210987654321098765432109876543210",
@@ -361,6 +362,7 @@ describe("ExactEvmSchemeV1", () => {
         scheme: "exact",
         network: "unknown-network",
         payload: {
+          signature: "0x00",
           authorization: {
             from: "0x1234567890123456789012345678901234567890",
             to: "0x9876543210987654321098765432109876543210",
@@ -839,6 +841,7 @@ describe("ExactEvmSchemeV1 malformed payload", () => {
     { name: "authorization not object", key: "authorization", value: "oops" },
     { name: "signature not string", key: "signature", value: 123 },
     { name: "from missing", parent: "authorization", key: "from", value: V1_MISSING },
+    { name: "from not an address", parent: "authorization", key: "from", value: "not-an-address" },
     { name: "value missing", parent: "authorization", key: "value", value: V1_MISSING },
     { name: "value not numeric", parent: "authorization", key: "value", value: "abc" },
     { name: "value null", parent: "authorization", key: "value", value: null },

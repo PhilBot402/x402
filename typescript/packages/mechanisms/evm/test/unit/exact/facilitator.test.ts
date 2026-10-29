@@ -170,7 +170,7 @@ describe("ExactEvmScheme (Facilitator)", () => {
             value: requirements.amount,
             validAfter: "0",
             validBefore: "999999999999",
-            nonce: "0x00",
+            nonce: `0x${"00".repeat(32)}`,
           },
           signature: "0x",
         },
@@ -845,7 +845,7 @@ describe("ExactEvmScheme (Facilitator)", () => {
             value: requirements.amount,
             validAfter: "0",
             validBefore: "999999999999",
-            nonce: "0x00",
+            nonce: `0x${"00".repeat(32)}`,
           },
           signature: "0xinvalid", // Invalid signature
         },
@@ -853,7 +853,8 @@ describe("ExactEvmScheme (Facilitator)", () => {
         resource: { url: "", description: "", mimeType: "" },
       };
 
-      // Mock verifyTypedData to return false for invalid signature
+      // EOA payer so the bad signature is checked with ecrecover, not the ERC-1271 mock.
+      mockFacilitatorSigner.getCode = vi.fn().mockResolvedValue("0x");
       mockFacilitatorSigner.verifyTypedData = vi.fn().mockResolvedValue(false);
 
       const result = await facilitator.verify(payload, requirements);
@@ -3141,6 +3142,7 @@ describe("exact EVM malformed payload field errors", () => {
     { name: "authorization not object", key: "authorization", value: "oops" },
     { name: "signature not string", key: "signature", value: 123 },
     { name: "from missing", parent: "authorization", key: "from", value: MISSING },
+    { name: "from not an address", parent: "authorization", key: "from", value: "not-an-address" },
     { name: "value missing", parent: "authorization", key: "value", value: MISSING },
     { name: "value not numeric", parent: "authorization", key: "value", value: "abc" },
     { name: "value null", parent: "authorization", key: "value", value: null },
