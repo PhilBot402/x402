@@ -65,6 +65,17 @@ type accountInfoReader interface {
 	) (*rpc.GetAccountInfoResult, error)
 }
 
+// accountInfoReader is the optional signer cap used to explain a failed simulation.
+// Exact-only signers omit it, so a missing method keeps the original failure.
+type accountInfoReader interface {
+	GetAccountInfo(
+		ctx context.Context,
+		account solana.PublicKey,
+		network string,
+		opts *rpc.GetAccountInfoOpts,
+	) (*rpc.GetAccountInfoResult, error)
+}
+
 // ExactSvmScheme implements the SchemeNetworkFacilitator interface for SVM (Solana) exact payments (V2)
 type ExactSvmScheme struct {
 	signer              svm.FacilitatorSvmSigner
