@@ -691,30 +691,35 @@ func (s *x402ResourceServer) CreatePaymentCancellationDispatcherWithExtensions(
 		RequirementsBytes:  requirementsBytes,
 	}
 	resolvedSettledPhases := settledPhases
-	return &PaymentCancellationDispatcher{
-		fire: func(opts VerifiedPaymentCancelOptions) *SettleResponse {
-			cancelCtx := VerifiedPaymentCanceledContext{
-				SettleContext:  settleCtx,
-				Reason:         opts.Reason,
-				Err:            opts.Err,
-				ResponseStatus: opts.ResponseStatus,
-				SettledPhases:  resolvedSettledPhases,
-				VerifyResult:   opts.VerifyResult,
-			}
-			s.mu.RLock()
-			matchedScheme := s.matchedSchemeHooks(Network(requirements.Network), requirements.Scheme)
-			hooks := orderedHooks(s, "onVerifiedPaymentCanceled", s.onVerifiedPaymentCanceledHooks, matchedScheme,
-				declaredExtensions, func(h *hookAdapterHandles) OnVerifiedPaymentCanceledHook { return h.OnVerifiedPaymentCanceled },
-				func(f OnVerifiedPaymentCanceledHook) bool { return f == nil })
-			scheme := findByNetworkAndScheme(s.schemes, requirements.Scheme, Network(requirements.Network))
-			s.mu.RUnlock()
-			for _, lh := range hooks {
-				_ = lh.Hook(cancelCtx)
-			}
+	dispatcher := &PaymentCancellationDispatcher{}
+	dispatcher.fire = func(opts VerifiedPaymentCancelOptions) *SettleResponse {
+		cancelCtx := VerifiedPaymentCanceledContext{
+			SettleContext:  settleCtx,
+			Reason:         opts.Reason,
+			Err:            opts.Err,
+			ResponseStatus: opts.ResponseStatus,
+			SettledPhases:  resolvedSettledPhases,
+			VerifyResult:   opts.VerifyResult,
+		}
+		s.mu.RLock()
+		matchedScheme := s.matchedSchemeHooks(Network(requirements.Network), requirements.Scheme)
+		hooks := orderedHooks(s, "onVerifiedPaymentCanceled", s.onVerifiedPaymentCanceledHooks, matchedScheme,
+			declaredExtensions, func(h *hookAdapterHandles) OnVerifiedPaymentCanceledHook { return h.OnVerifiedPaymentCanceled },
+			func(f OnVerifiedPaymentCanceledHook) bool { return f == nil })
+		scheme := findByNetworkAndScheme(s.schemes, requirements.Scheme, Network(requirements.Network))
+		s.mu.RUnlock()
+		for _, lh := range hooks {
+			_ = lh.Hook(cancelCtx)
+		}
 
-			return s.settleOnCancelAfterHooks(ctx, payload, requirements, declaredExtensions, cancelCtx, scheme)
-		},
+		resp, unknown := s.settleOnCancelAfterHooks(ctx, payload, requirements, declaredExtensions, cancelCtx, scheme)
+		if unknown != nil {
+			dispatcher.unknown = unknown
+			return nil
+		}
+		return resp
 	}
+	return dispatcher
 }
 
 // settleOnCancelAfterHooks asks the matched scheme for cancel settle requirements
@@ -728,20 +733,23 @@ func (s *x402ResourceServer) settleOnCancelAfterHooks(
 	declaredExtensions map[string]interface{},
 	cancelCtx VerifiedPaymentCanceledContext,
 	scheme SchemeNetworkServer,
-) *SettleResponse {
+) (*SettleResponse, error) {
 	provider, ok := scheme.(SettleOnCancelProvider)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	label := fmt.Sprintf(`scheme %q settleOnCancel`, scheme.Scheme())
 	cancelRequirements, err := provider.SettleOnCancel(cancelCtx)
 	if err != nil {
 		log.Printf("[x402] Resource server settleOnCancel failed (%s): %v", label, err)
-		return failedCancelSettleResponse(requirements, err)
+		if errors.Is(err, ErrCancellationOutcomeUnknown) {
+			return nil, err
+		}
+		return failedCancelSettleResponse(requirements, err), nil
 	}
 	if cancelRequirements == nil {
-		return nil
+		return nil, nil
 	}
 
 	settleResp, settleErr := s.SettlePaymentWithExtensions(
@@ -749,9 +757,9 @@ func (s *x402ResourceServer) settleOnCancelAfterHooks(
 	)
 	if settleErr != nil {
 		log.Printf("[x402] Resource server settleOnCancel failed (%s): %v", label, settleErr)
-		return failedCancelSettleResponse(requirements, settleErr)
+		return failedCancelSettleResponse(requirements, settleErr), nil
 	}
-	return settleResp
+	return settleResp, nil
 }
 
 func (s *x402ResourceServer) cancelUnsettledPayment(
@@ -1812,35 +1820,7 @@ func (s *x402ResourceServer) BuildPaymentRequirementsFromConfig(ctx context.Cont
 		return nil, fmt.Errorf("no scheme server for %s on %s", config.Scheme, config.Network)
 	}
 
-	// Look up cached supported kinds from facilitator
-	// This was populated during Initialize() by querying facilitator's /supported endpoint
-	var supportedKind types.SupportedKind
-	foundKind := false
-
-	// Check each cached facilitator response for matching supported kind
-	s.supportedCache.mu.RLock()
-	for _, cachedResponse := range s.supportedCache.snapshotLocked() {
-		// Iterate through flat kinds array (version is in each element)
-		for _, kind := range cachedResponse.Kinds {
-			// Match on scheme and network (only check V2 kinds)
-			if kind.X402Version == 2 && kind.Scheme == config.Scheme && string(kind.Network) == string(config.Network) {
-				supportedKind = types.SupportedKind{
-					X402Version: kind.X402Version,
-					Scheme:      kind.Scheme,
-					Network:     string(kind.Network),
-					Extra:       kind.Extra, // This includes feePayer for SVM!
-				}
-				foundKind = true
-				break
-			}
-		}
-		if foundKind {
-			break
-		}
-	}
-	s.supportedCache.mu.RUnlock()
-
-	// If no cached kind found, create a basic one (fallback for cases without facilitator)
+	supportedKind, _, foundKind := s.findSupportedKind(config.Network, config.Scheme)
 	if !foundKind {
 		supportedKind = types.SupportedKind{
 			Scheme:  config.Scheme,
@@ -1856,5 +1836,3 @@ func (s *x402ResourceServer) BuildPaymentRequirementsFromConfig(ctx context.Cont
 
 	return []types.PaymentRequirements{requirement}, nil
 }
-
-// Helper functions use the generic findSchemesByNetwork from utils.go
