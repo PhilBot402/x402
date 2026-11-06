@@ -8,10 +8,7 @@ import type { VerifyResponse } from "@x402/core/types";
 import type { SchemePaymentRequiredContext } from "@x402/core/types";
 import {
   type BatchSettlementChannelStateExtra,
-  type BatchSettlementDepositPayload,
   type BatchSettlementPayload,
-  type BatchSettlementRefundPayload,
-  type BatchSettlementVoucherPayload,
   type BatchSettlementVoucherStateExtra,
   isBatchSettlementDepositPayload,
   isBatchSettlementPayload,
@@ -211,8 +208,10 @@ async function reserveAndVerifyLocally(
     return verificationStateUnavailable();
   }
 
-  // No local row: onchain totalClaimed is the baseline; fail closed if absent.
   if (channelSnapshot) {
+    if (requirements.network) {
+      channelSnapshot = { ...channelSnapshot, network: requirements.network };
+    }
     const expectedMaxClaimable = isRefund
       ? BigInt(channelSnapshot.chargedCumulativeAmount)
       : BigInt(channelSnapshot.chargedCumulativeAmount) + BigInt(requirements.amount);
@@ -370,44 +369,6 @@ export async function abortIfBelowMinDeposit(
 }
 
 /**
- * Rejects client-supplied pending ids.
- *
- * @param raw - Decoded payment payload.
- * @returns An abort directive or undefined.
- */
-export function abortIfUnexpectedPendingId(
-  raw: BatchSettlementPayload,
-): { abort: true; reason: string; message: string } | undefined {
-  if (!("pendingId" in raw) || raw.pendingId === undefined) {
-    return undefined;
-  }
-  return {
-    abort: true,
-    reason: Errors.ErrUnexpectedPendingId,
-    message: "pendingId is server-authored and must not be supplied by the client",
-  };
-}
-
-/**
- * Rejects client-supplied cancellation fields.
- *
- * @param raw - Decoded payment payload.
- * @returns An abort directive or undefined.
- */
-export function abortIfUnexpectedCancel(
-  raw: BatchSettlementPayload,
-): { abort: true; reason: string; message: string } | undefined {
-  if (!("cancel" in raw) || raw.cancel === undefined) {
-    return undefined;
-  }
-  return {
-    abort: true,
-    reason: Errors.ErrUnexpectedCancel,
-    message: "cancel is server-authored and must not be supplied by the client",
-  };
-}
-
-/**
  * Rejects client-supplied server-authored settle fields.
  *
  * @param raw - Decoded payment payload.
@@ -416,7 +377,21 @@ export function abortIfUnexpectedCancel(
 export function abortIfUnexpectedServerAuthoredSettleFields(
   raw: BatchSettlementPayload,
 ): { abort: true; reason: string; message: string } | undefined {
-  return abortIfUnexpectedPendingId(raw) ?? abortIfUnexpectedCancel(raw);
+  if ("pendingId" in raw && raw.pendingId !== undefined) {
+    return {
+      abort: true,
+      reason: Errors.ErrUnexpectedPendingId,
+      message: "pendingId is server-authored and must not be supplied by the client",
+    };
+  }
+  if ("cancel" in raw && raw.cancel !== undefined) {
+    return {
+      abort: true,
+      reason: Errors.ErrUnexpectedCancel,
+      message: "cancel is server-authored and must not be supplied by the client",
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -546,13 +521,19 @@ export async function handleAfterVerify(
   if (BigInt(signedMaxClaimable) !== expectedMaxClaimable) {
     scheme.rememberChannelSnapshot(
       paymentPayload,
-      prior ??
-        buildProvisionalChannel(raw, base, {
-          balance,
-          totalClaimed,
-          withdrawRequestedAt,
-          refundNonce,
-        }),
+      prior ?? {
+        channelId: raw.voucher.channelId,
+        channelConfig: raw.channelConfig,
+        network: requirements.network,
+        chargedCumulativeAmount: base,
+        signedMaxClaimable: raw.voucher.maxClaimableAmount,
+        signature: raw.voucher.signature,
+        balance,
+        totalClaimed,
+        withdrawRequestedAt,
+        refundNonce,
+        lastRequestTimestamp: Date.now(),
+      },
     );
     await scheme.releasePendingRequest(paymentPayload);
     return {
@@ -565,6 +546,7 @@ export async function handleAfterVerify(
   const channelSnapshot: Channel = {
     channelId,
     channelConfig,
+    network: requirements.network || prior?.network,
     chargedCumulativeAmount: base,
     signedMaxClaimable,
     signature,
@@ -584,12 +566,6 @@ export async function handleAfterVerify(
 }
 
 /**
- * Cleanup hook: clears this request's reservation after verify throws.
- *
- * @param scheme - Owning `BatchSettlementEvmScheme` instance.
- * @param ctx - Verify failure context for the current payment.
- */
-/**
  * Releases a reservation after verification fails.
  *
  * @param scheme - Owning scheme.
@@ -602,12 +578,6 @@ export async function handleVerifyFailure(
   await scheme.clearPendingRequest(ctx.paymentPayload);
 }
 
-/**
- * Cleanup hook: clears this request's reservation when handler work is canceled.
- *
- * @param scheme - Owning `BatchSettlementEvmScheme` instance.
- * @param ctx - Verified-payment cancellation context.
- */
 /**
  * Releases a reservation after verified payment handling is canceled.
  *
@@ -637,37 +607,4 @@ export async function handleVerifiedPaymentCanceled(
  */
 function isNonNegativeIntegerString(value: string): boolean {
   return /^\d+$/.test(value);
-}
-
-/**
- * Builds a corrective channel snapshot from facilitator state.
- *
- * @param raw - Batch-settlement payload.
- * @param chargedCumulativeAmount - Charge baseline.
- * @param onchain - Facilitator channel state.
- * @param onchain.balance - Onchain balance.
- * @param onchain.totalClaimed - Onchain claimed total.
- * @param onchain.withdrawRequestedAt - Onchain withdrawal timestamp.
- * @param onchain.refundNonce - Onchain refund nonce.
- * @returns A corrective channel snapshot.
- */
-function buildProvisionalChannel(
-  raw: BatchSettlementVoucherPayload | BatchSettlementDepositPayload | BatchSettlementRefundPayload,
-  chargedCumulativeAmount: string,
-  onchain: {
-    balance: string;
-    totalClaimed: string;
-    withdrawRequestedAt: number;
-    refundNonce: number;
-  },
-): Channel {
-  return {
-    channelId: raw.voucher.channelId,
-    channelConfig: raw.channelConfig,
-    chargedCumulativeAmount,
-    signedMaxClaimable: raw.voucher.maxClaimableAmount,
-    signature: raw.voucher.signature,
-    ...onchain,
-    lastRequestTimestamp: Date.now(),
-  };
 }
