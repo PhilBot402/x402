@@ -840,8 +840,7 @@ const (
 )
 
 // boundSession returns a claimable and refundable session whose channel id is
-// bound to network. A false stamped drops the persisted Network, modelling a
-// row written before sessions carried one.
+// bound to network. A false stamped leaves Network empty.
 func boundSession(t *testing.T, network x402.Network, salt int, stamped bool) *ChannelSession {
 	t.Helper()
 	cfg := batchsettlement.ChannelConfig{
